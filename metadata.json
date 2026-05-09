@@ -1,0 +1,6 @@
+{
+  "name": "BPC Triagem Pro",
+  "description": "Painel de controle para operadores de triagem BPC/LOAS com monitoramento de leads em tempo real.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}
