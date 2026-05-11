@@ -1,11 +1,8 @@
 import { createClient } from '@supabase/supabase-js';
 
-// O Vite vai substituir estas strings pelos valores reais durante o build
-const supabaseUrl = process.env.SUPABASE_URL || '';
-const supabaseAnonKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+// No Frontend, usamos a ANON_KEY (Publishable)
+// No Backend (Bot), usamos a SERVICE_ROLE_KEY
+const supabaseUrl = process.env.SUPABASE_URL || import.meta.env?.VITE_SUPABASE_URL || 'https://fygzdhkxvgsarihbppkq.supabase.co';
+const supabaseKey = process.env.SUPABASE_ANON_KEY || import.meta.env?.VITE_SUPABASE_ANON_KEY || 'sb_publishable_PyBHJ0RKxfXw9J-NqTiLA_InzJpqE';
 
-if (!supabaseUrl) {
-  console.warn('Dashboard carregando sem URL do Supabase. Verifique as variáveis de ambiente.');
-}
-
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+export const supabase = createClient(supabaseUrl, supabaseKey);
