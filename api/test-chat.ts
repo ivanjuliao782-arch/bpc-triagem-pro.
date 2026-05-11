@@ -1,6 +1,6 @@
 
 import { VercelRequest, VercelResponse } from '@vercel/node';
-import { SofiaEngine } from '../src/lib/sofia';
+import { SofiaEngine } from '../src/sofia';
 
 const sofia = new SofiaEngine();
 
