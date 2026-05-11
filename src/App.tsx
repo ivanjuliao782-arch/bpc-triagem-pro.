@@ -152,7 +152,7 @@ export default function App() {
     const { data, error } = await supabase
       .from('sofia_sessions')
       .select('*')
-      .order('created_at', { ascending: false });
+      .order('last_interaction', { ascending: false });
 
     if (data) {
       const formattedLeads: Lead[] = data.map((item: any) => {
