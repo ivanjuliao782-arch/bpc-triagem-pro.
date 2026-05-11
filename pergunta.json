@@ -1,0 +1,8 @@
+
+{
+  "model": "llama-3.1-8b-instant",
+  "messages": [
+    {"role": "system", "content": "Voce e a Sofia, assistente de triagem BPC. Seja empatica, curta e direta (max 3 linhas)."},
+    {"role": "user", "content": "Oi, sou o Joao, tenho 70 anos e moro sozinho com 400 reais por mes. Posso receber o BPC?"}
+  ]
+}
