@@ -339,13 +339,18 @@ Preencha o JSON apenas com os dados que o usuário já respondeu até agora.`;
       { role: 'user', content: text }
     ];
 
-    const chatCompletion = await this.groq.chat.completions.create({
-      messages: messages as any,
-      model: 'llama-3.3-70b-versatile',
-      temperature: 0.3
-    });
+    console.log(`🤖 Solicitando resposta da IA para ${phone}...`);
+    
+    try {
+      const chatCompletion = await this.groq.chat.completions.create({
+        messages: messages as any,
+        model: 'llama-3.1-8b-instant',
+        temperature: 0.3
+      });
 
-    const fullResponse = chatCompletion.choices[0].message.content;
+      const fullResponse = chatCompletion.choices[0].message.content;
+      console.log(`✅ IA respondeu.`);
+
     const [reply, jsonPart] = fullResponse!.split('DATA_EXTRACT:');
 
     const cleanReply = reply!.trim();
@@ -384,7 +389,14 @@ Preencha o JSON apenas com os dados que o usuário já respondeu até agora.`;
       console.error(error);
     }
 
-    return cleanReply;
+      return cleanReply;
+    } catch (apiError: any) {
+      console.error('❌ ERRO NA API DA GROQ:', apiError.message);
+      if (apiError.status === 429) {
+        return "Peço desculpas, mas estou recebendo muitas mensagens agora. Pode me mandar um 'Oi' daqui a alguns minutinhos? Estarei pronta para te ajudar! 😊";
+      }
+      return "Tive um pequeno probleminza técnico aqui, mas já estou me recuperando. O que você estava me dizendo?";
+    }
   }
 
   private async updateInternalState(phone: string, currentStep: string, userInput: string, aiReply: string) {

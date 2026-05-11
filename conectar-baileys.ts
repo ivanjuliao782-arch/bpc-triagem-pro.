@@ -84,3 +84,9 @@ connectToWhatsApp();
 
 // Mantém o processo vivo
 process.stdin.resume();
+
+// Garantia absoluta de que o processo não vai fechar
+setInterval(() => {
+    // Mantém o event loop ocupado
+}, 1000 * 60 * 60);
+
