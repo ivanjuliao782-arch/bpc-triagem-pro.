@@ -1,6 +1,7 @@
 
 import { createClient } from '@supabase/supabase-js';
 import Groq from 'groq-sdk';
+import { GoogleGenerativeAI } from "@google/generative-ai";
 import * as dotenv from 'dotenv';
 
 dotenv.config();
@@ -8,10 +9,15 @@ dotenv.config();
 export class SofiaEngine {
   private supabase;
   private groq;
+  private gemini;
+
 
   constructor() {
     this.supabase = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
     this.groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
+    this.gemini = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+
   }
 
   // Novo: Método para transcrever áudio
@@ -347,13 +353,10 @@ Preencha o JSON apenas com os dados que o usuário já respondeu até agora.`;
     console.log(`🤖 Solicitando resposta da IA para ${phone}...`);
     
     try {
-      const chatCompletion = await this.groq.chat.completions.create({
-        messages: messages as any,
-        model: 'llama-3.1-8b-instant',
-        temperature: 0.3
-      });
-
-      const fullResponse = chatCompletion.choices[0].message.content;
+      const prompt = `System Prompt:\n${finalPrompt}\n\nUser History:\n${history.map((m: any) => `${m.role}: ${m.content}`).join('\n')}\n\nUser Input: ${text}`;
+      
+      const result = await this.gemini.generateContent(prompt);
+      const fullResponse = result.response.text();
       console.log(`✅ IA respondeu.`);
 
     const [reply, jsonPart] = fullResponse!.split('DATA_EXTRACT:');
@@ -398,7 +401,7 @@ Preencha o JSON apenas com os dados que o usuário já respondeu até agora.`;
 
       return cleanReply;
     } catch (apiError: any) {
-      console.error('❌ ERRO NA API DA GROQ:', apiError.message);
+      console.error('❌ ERRO NA API DO GEMINI:', apiError.message);
       if (apiError.status === 429) {
         return "Peço desculpas, mas estou recebendo muitas mensagens agora. Pode me mandar um 'Oi' daqui a alguns minutinhos? Estarei pronta para te ajudar! 😊";
       }
