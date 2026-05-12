@@ -1,4 +1,4 @@
-
+import { knowledge } from './knowledge';
 import { createClient } from '@supabase/supabase-js';
 import Groq from 'groq-sdk';
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -125,6 +125,8 @@ Preencha o JSON apenas com os dados que o usuário já respondeu até agora.`;
 
     const messages = [
       { role: 'system', content: finalPrompt },
+      { role: 'user', content: 'Base de conhecimento:\n' + knowledge },
+      { role: 'model', content: 'Entendido. Vou seguir essa base de conhecimento.' },
       ...history,
       { role: 'user', content: text }
     ];
@@ -132,7 +134,11 @@ Preencha o JSON apenas com os dados que o usuário já respondeu até agora.`;
     console.log(`🤖 Solicitando resposta da IA para ${phone}...`);
     
     try {
-      const prompt = `System Prompt:\n${finalPrompt}\n\nUser History:\n${history.map((m: any) => `${m.role}: ${m.content}`).join('\n')}\n\nUser Input: ${text}`;
+      const knowledgeMessages = [
+        { role: 'user', content: 'Base de conhecimento:\n' + knowledge },
+        { role: 'model', content: 'Entendido. Vou seguir essa base de conhecimento.' }
+      ];
+      const prompt = `System Prompt:\n${finalPrompt}\n\nUser History:\n${[...knowledgeMessages, ...history].map((m: any) => `${m.role}: ${m.content}`).join('\n')}\n\nUser Input: ${text}`;
       
       const result = await this.gemini.generateContent(prompt);
       const fullResponse = result.response.text();
