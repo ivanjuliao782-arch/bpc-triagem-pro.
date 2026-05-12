@@ -38,6 +38,11 @@ export class SofiaEngine {
 
     if (!session) return this.startSession(phone);
 
+    // Se já existe nome e a conversa está recomeçando (ou apenas para ser educada)
+    if (session.user_data?.nome_usuario && (!session.user_data.history || session.user_data.history.length === 0)) {
+        return `Olá ${session.user_data.nome_usuario}! Que bom te ver de novo. Vamos continuar nossa conversa sobre o BPC?`;
+    }
+
     // Inteligência: Usar o Llama 3 para entender intenções complexas
     return this.handleStepWithAI(session, text);
   }
@@ -360,16 +365,18 @@ Preencha o JSON apenas com os dados que o usuário já respondeu até agora.`;
       ...history,
       { role: 'user', content: text },
       { role: 'assistant', content: cleanReply }
-    ].slice(-10); // Mantém as últimas 10 interações para não estourar limite
+    ].slice(-20); // Aumentado para 20 conforme solicitado
 
     let updatedUserData = { ...user_data, history: newHistory };
 
     if (jsonPart) {
       try {
-        // Tenta limpar possíveis marcações de código markdown do LLM
         const cleanJson = jsonPart.replace(/```json/g, '').replace(/```/g, '').trim();
         const extracted = JSON.parse(cleanJson);
-        updatedUserData = { ...updatedUserData, ...extracted };
+        
+        // SALVA O NOME SEPARADO NO USER_DATA
+        const nomeExtraido = extracted.nome_usuario || user_data?.nome_usuario;
+        updatedUserData = { ...updatedUserData, ...extracted, nome_usuario: nomeExtraido };
       } catch (e) {
         console.error('Erro ao processar JSON da IA:', e);
       }
