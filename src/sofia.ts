@@ -204,6 +204,10 @@ Preencha o JSON apenas com os dados que o usuário já respondeu até agora.`;
 
   private async startSession(phone: string) {
     await this.supabase.from('sofia_sessions').insert([{ phone }]);
-    return "Olá! Sou a Sofia, do escritório da Dra. Mônica Lucioli. Vou te ajudar com o BPC/LOAS. Qual seu nome? 😊";
+    const hour = parseInt(new Date().toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', hour12: false }));
+    let saudacao = "Boa noite";
+    if (hour >= 6 && hour < 12) saudacao = "Bom dia";
+    else if (hour >= 12 && hour < 18) saudacao = "Boa tarde";
+    return `${saudacao}! Tudo bem? Sou a Sofia, do escritório da Dra. Mônica Lucioli. Com quem eu falo? 😊`;
   }
 }
