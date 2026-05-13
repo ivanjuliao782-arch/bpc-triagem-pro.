@@ -46,7 +46,7 @@ export class SofiaEngine {
 
     // Se já existe nome e a conversa está recomeçando (ou apenas para ser educada)
     if (session.user_data?.nome_usuario && (!session.user_data.history || session.user_data.history.length === 0)) {
-        return `Olá ${session.user_data.nome_usuario}! Que bom te ver de novo. Vamos continuar nossa conversa sobre o BPC?`;
+        return `Olá ${session.user_data.nome_usuario}! Que bom te ver de novo. Como posso te ajudar hoje? 😊`;
     }
 
     // Inteligência: Usar o Llama 3 para entender intenções complexas
@@ -203,7 +203,7 @@ Preencha o JSON apenas com os dados que o usuário já respondeu até agora.`;
       return cleanReply;
     } catch (apiError: any) {
       console.error('❌ ERRO NA API DO GEMINI:', apiError.message);
-      return "Tive um pequeno probleminza técnico aqui, mas já estou me recuperando. O que você estava me dizendo?";
+      return "";
     }
   }
 
