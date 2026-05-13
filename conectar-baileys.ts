@@ -1,10 +1,10 @@
 
 import makeWASocket, { 
     DisconnectReason, 
-    useMultiFileAuthState, 
     fetchLatestBaileysVersion,
     downloadMediaMessage
 } from '@whiskeysockets/baileys';
+import { useSupabaseAuthState } from './src/lib/useSupabaseAuthState';
 import { Boom } from '@hapi/boom';
 import qrcode from 'qrcode-terminal';
 import { SofiaEngine } from './src/sofia';
@@ -15,7 +15,7 @@ import * as dotenv from 'dotenv';
 dotenv.config();
 
 async function connectToWhatsApp() {
-    const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys');
+    const { state, saveCreds } = await useSupabaseAuthState('sofia_principal');
     const { version } = await fetchLatestBaileysVersion();
     const sofia = new SofiaEngine();
 
