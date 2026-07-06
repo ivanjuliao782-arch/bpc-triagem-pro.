@@ -1199,16 +1199,14 @@ Gere a resposta da Lara (retorne APENAS o texto da mensagem a ser enviada ao cli
       );
 
       // Ordem de Decisão (Esteira de Decisão de Entrada)
-      if (temChanceAuxilio) {
+      if (ageNum >= 65 && !temChanceAuxilio) {
+        fluxo_ativo = 'BPC_IDOSO';
+      } else if (temChanceAuxilio) {
         fluxo_ativo = 'INSS_CONTRIBUTIVO';
       } else if (temChanceAposentadoria) {
         fluxo_ativo = 'APOSENTADORIA';
       } else if (temChanceBPC) {
-        if (ageNum >= 65) {
-          fluxo_ativo = 'BPC_IDOSO';
-        } else {
-          fluxo_ativo = 'BPC_DEFICIENTE';
-        }
+        fluxo_ativo = 'BPC_DEFICIENTE';
       } else {
         fluxo_ativo = 'EXCECAO';
       }
