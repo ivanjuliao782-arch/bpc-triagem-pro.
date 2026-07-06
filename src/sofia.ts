@@ -1138,6 +1138,16 @@ Gere a resposta da Lara (retorne APENAS o texto da mensagem a ser enviada ao cli
       }
     }
 
+    // Se nunca contribuiu (ja_contribuiu === false), pre-definimos os campos de contribuição e ativamos o fluxo BPC Idoso se tiver idade
+    if (userData.ja_contribuiu === false) {
+      userData.esta_contribuindo_atualmente = false;
+      userData.tempo_parou_contribuir = 'nunca';
+      const ageNum = this.parseNumber(userData.idade);
+      if (ageNum >= 65) {
+        userData.fluxo_ativo = 'BPC_IDOSO';
+      }
+    }
+
     // 5. Contribuição Atual
     if (userData.esta_contribuindo_atualmente === undefined || userData.esta_contribuindo_atualmente === null) {
       return { state: 'AWAITING_CURRENT_CONTRIBUTION' };
@@ -1151,12 +1161,12 @@ Gere a resposta da Lara (retorne APENAS o texto da mensagem a ser enviada ao cli
     }
 
     // 7. Doença
-    if (userData.tem_doenca_ou_limitacao === undefined || userData.tem_doenca_ou_limitacao === null) {
+    if (userData.fluxo_ativo !== 'BPC_IDOSO' && (userData.tem_doenca_ou_limitacao === undefined || userData.tem_doenca_ou_limitacao === null)) {
       return { state: 'AWAITING_DISEASE' };
     }
 
     // 8. Deficiência
-    if (userData.tem_deficiencia === undefined || userData.tem_deficiencia === null) {
+    if (userData.fluxo_ativo !== 'BPC_IDOSO' && (userData.tem_deficiencia === undefined || userData.tem_deficiencia === null)) {
       return { state: 'AWAITING_DISABILITY' };
     }
 
