@@ -1235,6 +1235,19 @@ Gere a resposta da Lara (retorne APENAS o texto da mensagem a ser enviada ao cli
       if (userData.bpc_pessoas_casa === undefined || userData.bpc_pessoas_casa === null || String(userData.bpc_pessoas_casa).trim() === '') {
         return { state: 'BPC_AWAITING_HOUSEHOLD', fluxo_ativo };
       }
+      const moraSozinho = userData.bpc_pessoas_casa && (
+        String(userData.bpc_pessoas_casa).toLowerCase().includes('sozinh') ||
+        String(userData.bpc_pessoas_casa).toLowerCase().includes('moro só') ||
+        String(userData.bpc_pessoas_casa).toLowerCase().includes('moro so') ||
+        String(userData.bpc_pessoas_casa).toLowerCase().includes('apenas eu') ||
+        String(userData.bpc_pessoas_casa).toLowerCase().includes('somente eu') ||
+        String(userData.bpc_pessoas_casa).toLowerCase() === 'eu' ||
+        String(userData.bpc_pessoas_casa).toLowerCase().includes('1 pessoa') ||
+        String(userData.bpc_pessoas_casa).toLowerCase().includes('uma pessoa')
+      );
+      if (moraSozinho && (userData.bpc_quem_renda === undefined || userData.bpc_quem_renda === null || String(userData.bpc_quem_renda).trim() === '')) {
+        userData.bpc_quem_renda = 'sozinho';
+      }
       if (userData.bpc_quem_renda === undefined || userData.bpc_quem_renda === null || String(userData.bpc_quem_renda).trim() === '') {
         return { state: 'BPC_AWAITING_HOUSEHOLD_INCOME', fluxo_ativo };
       }
@@ -1272,6 +1285,19 @@ Gere a resposta da Lara (retorne APENAS o texto da mensagem a ser enviada ao cli
     if (fluxo_ativo === 'BPC_IDOSO' || fluxo_ativo === 'BPC_DEFICIENTE') {
       if (userData.bpc_pessoas_casa === undefined || userData.bpc_pessoas_casa === null || String(userData.bpc_pessoas_casa).trim() === '') {
         return { state: 'BPC_AWAITING_HOUSEHOLD', fluxo_ativo };
+      }
+      const moraSozinho = userData.bpc_pessoas_casa && (
+        String(userData.bpc_pessoas_casa).toLowerCase().includes('sozinh') ||
+        String(userData.bpc_pessoas_casa).toLowerCase().includes('moro só') ||
+        String(userData.bpc_pessoas_casa).toLowerCase().includes('moro so') ||
+        String(userData.bpc_pessoas_casa).toLowerCase().includes('apenas eu') ||
+        String(userData.bpc_pessoas_casa).toLowerCase().includes('somente eu') ||
+        String(userData.bpc_pessoas_casa).toLowerCase() === 'eu' ||
+        String(userData.bpc_pessoas_casa).toLowerCase().includes('1 pessoa') ||
+        String(userData.bpc_pessoas_casa).toLowerCase().includes('uma pessoa')
+      );
+      if (moraSozinho && (userData.bpc_quem_renda === undefined || userData.bpc_quem_renda === null || String(userData.bpc_quem_renda).trim() === '')) {
+        userData.bpc_quem_renda = 'sozinho';
       }
       if (userData.bpc_quem_renda === undefined || userData.bpc_quem_renda === null || String(userData.bpc_quem_renda).trim() === '') {
         return { state: 'BPC_AWAITING_HOUSEHOLD_INCOME', fluxo_ativo };
