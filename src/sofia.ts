@@ -1176,7 +1176,9 @@ Gere a resposta da Lara (retorne APENAS o texto da mensagem a ser enviada ao cli
     const ageNum = this.parseNumber(userData.idade);
     const contribYears = this.parseNumber(userData.inss_tempo_carteira);
 
-    if (contribYears >= 15 || (ageNum >= 55 && contribYears >= 5)) {
+    if (ageNum >= 65 && userData.ja_contribuiu === false) {
+      fluxo_ativo = 'BPC_IDOSO';
+    } else if (contribYears >= 15 || (ageNum >= 55 && contribYears >= 5)) {
       fluxo_ativo = 'APOSENTADORIA';
     }
 
