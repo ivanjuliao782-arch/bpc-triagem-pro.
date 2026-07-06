@@ -1,6 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import Groq from 'groq-sdk';
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import OpenAI from 'openai';
 import * as dotenv from 'dotenv';
 
 dotenv.config();
@@ -74,15 +74,15 @@ const EXCECAO_QUESTIONS = [
 export class SofiaEngine {
   private supabase;
   private groq;
-  private genAI;
+  private openai;
 
   constructor() {
     this.supabase = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
     this.groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
-    this.genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
+    this.openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY! });
   }
 
-  // Novo: Método para transcrever áudio com fallback nativo no Gemini caso a Groq esteja bloqueada
+  // Novo: Método para transcrever áudio com fallback nativo no OpenAI Whisper caso a Groq esteja bloqueada
   async transcribeAudio(audioBuffer: Buffer) {
     // 1. Tenta transcrever com o Groq Whisper primeiro
     try {
@@ -97,39 +97,23 @@ export class SofiaEngine {
         return transcription.text;
       }
     } catch (error: any) {
-      console.warn("⚠️ Falha na transcrição da Groq (provável bloqueio de IP/Rede). Tentando Gemini nativo...", error.message);
+      console.warn("⚠️ Falha na transcrição da Groq (provável bloqueio de IP/Rede). Tentando OpenAI Whisper...", error.message);
     }
 
-    // 2. Fallback para áudio nativo do Gemini (sem necessidade de Groq!)
+    // 2. Fallback para áudio nativo na OpenAI Whisper (sem necessidade de Groq!)
     try {
-      console.log("🎙️ Iniciando transcrição nativa de áudio no Gemini...");
-      const modelsToTry = ["gemini-3.1-flash-lite", "gemini-2.5-flash", "gemini-3.5-flash", "gemini-2.5-pro", "gemini-2.5-flash-lite"];
-      
-      for (const modelName of modelsToTry) {
-        try {
-          console.log(`🤖 Tentando áudio nativo no modelo ${modelName}...`);
-          const model = this.genAI.getGenerativeModel({ model: modelName }, { apiVersion: "v1" });
-          const result = await model.generateContent([
-            {
-              inlineData: {
-                data: audioBuffer.toString("base64"),
-                mimeType: "audio/ogg"
-              }
-            },
-            "Transcreva este áudio em português de forma literal e precisa. Retorne APENAS o texto falado, sem qualquer comentário, introdução ou explicação adicional."
-          ]);
-          
-          const text = result.response.text();
-          if (text && text.trim()) {
-            console.log(`✅ Áudio transcrito com sucesso via Gemini (${modelName})!`);
-            return text.trim();
-          }
-        } catch (err: any) {
-          console.warn(`⚠️ Transcrição via Gemini falhou para ${modelName}: ${err.message}`);
-        }
+      console.log("🎙️ Iniciando transcrição nativa de áudio na OpenAI (Whisper)...");
+      const transcription = await this.openai.audio.transcriptions.create({
+        file: await OpenAI.toFile(audioBuffer, 'audio.ogg'),
+        model: 'whisper-1',
+        language: 'pt'
+      });
+      if (transcription && transcription.text) {
+        console.log("✅ Transcrição via OpenAI Whisper efetuada com sucesso!");
+        return transcription.text;
       }
     } catch (err: any) {
-      console.error("❌ Falha crítica em todas as tentativas de transcrição de áudio:", err.message);
+      console.error("❌ Falha crítica em todas as tentativas de transcrição de áudio (Groq e OpenAI):", err.message);
     }
 
     return null;
@@ -245,6 +229,8 @@ export class SofiaEngine {
         mergedData.inss_ultima_contribuicao = 'Não contribuiu nos últimos 5 anos';
         mergedData.has_recent_contribution = false;
       }
+      if (currentState === 'RETIREMENT_AWAITING_SPECIAL_RURAL') mergedData.retirement_special_rural = 'Não';
+      if (currentState === 'RETIREMENT_AWAITING_OTHER_PERIODS') mergedData.retirement_other_periods = 'Não';
     } else if (isPositive) {
       if (currentState === 'AWAITING_LAWYER') mergedData.has_lawyer = true;
       if (currentState === 'AWAITING_WORK') mergedData.trabalha_atualmente = true;
@@ -260,6 +246,8 @@ export class SofiaEngine {
       }
       if (currentState === 'BPC_AWAITING_CADUNICO') mergedData.bpc_cad_unico = true;
       if (currentState === 'INSS_AWAITING_REPORTS') mergedData.inss_laudos_medicos = true;
+      if (currentState === 'RETIREMENT_AWAITING_SPECIAL_RURAL') mergedData.retirement_special_rural = 'Sim';
+      if (currentState === 'RETIREMENT_AWAITING_OTHER_PERIODS') mergedData.retirement_other_periods = 'Sim';
     }
 
     // Mapeamento extra de durabilidade para tempo de contribuição total
@@ -650,8 +638,8 @@ JSON de retorno:`;
     const hasAskedContrib = history.some((h: any) => h.role === 'assistant' && (h.content.toLowerCase().includes('contribuiu') || h.content.toLowerCase().includes('tempo de contribuição') || h.content.toLowerCase().includes('tempo você já contribuiu') || h.content.toLowerCase().includes('tempo de carteira')));
     
     // Verificamos se já confirmamos esses dados anteriormente no histórico
-    const hasConfirmedAge = history.some((h: any) => h.role === 'assistant' && h.content.toLowerCase().includes('entendido') && h.content.toLowerCase().includes('anos'));
-    const hasConfirmedContrib = history.some((h: any) => h.role === 'assistant' && h.content.toLowerCase().includes('entendido') && h.content.toLowerCase().includes('contribuição'));
+    const hasConfirmedAge = history.some((h: any) => h.role === 'assistant' && (h.content.toLowerCase().includes('entendido') || h.content.toLowerCase().includes('certo') || h.content.toLowerCase().includes('ok') || h.content.toLowerCase().includes('anotado')) && h.content.toLowerCase().includes('anos'));
+    const hasConfirmedContrib = history.some((h: any) => h.role === 'assistant' && (h.content.toLowerCase().includes('entendido') || h.content.toLowerCase().includes('certo') || h.content.toLowerCase().includes('ok') || h.content.toLowerCase().includes('anotado')) && h.content.toLowerCase().includes('contribuição'));
 
     const shouldConfirmAge = user_data.idade && !hasAskedAge && !hasConfirmedAge;
     const shouldConfirmContrib = (user_data.inss_tempo_carteira || user_data.tempo_contribuicao) && !hasAskedContrib && !hasConfirmedContrib;
@@ -668,7 +656,9 @@ JSON de retorno:`;
     let confirmPrompt = "";
     if (confirmParts.length > 0) {
       const nameStr = nameVal ? `, ${nameVal},` : "";
-      const confirmExemplo = `Entendido${nameStr} você tem ${confirmParts.join(" e ")}.`;
+      const variations = ['Certo', 'Ok', 'Anotado'];
+      const prefixWord = variations[Math.floor(Math.random() * variations.length)];
+      const confirmExemplo = `${prefixWord}${nameStr} você tem ${confirmParts.join(" e ")}.`;
       confirmPrompt = `\n⚠️ DIRETRIZ CRÍTICA DE CONFIRMAÇÃO DE DADOS:
 O cliente forneceu novas informações que ainda não foram confirmadas verbalmente por você.
 Você DEVE OBRIGATORIAMENTE iniciar a sua resposta exatamente com o prefixo de confirmação: "${confirmExemplo}".
@@ -692,15 +682,16 @@ DIRETRIZES DE COMUNICAÇÃO E REGRAS DE NEGÓCIO (OBRIGATÓRIO):
 7. NUNCA REPETIR O NOME DO CLIENTE: Não repita o nome do cliente nas mensagens da triagem (ex: não comece com "Sandra,..." ou "João,..."). Fale diretamente. EXCEÇÃO CRÍTICA: Se houver uma diretriz de confirmação de dados no início do prompt, você deve incluir o nome do cliente exatamente como indicado no prefixo de confirmação de exemplo.
 8. NÃO SEJA INSISTENTE COM O NOME: Se você já perguntou o nome do cliente e ele não informou na mensagem seguinte, NÃO repita a pergunta do nome. Avance para a triagem diretamente.
 9. EVITAR REPETIÇÕES DE PERGUNTAS (CRÍTICO): Se a última mensagem enviada por você já era a pergunta da etapa atual da FSM (ex: "Você já tem advogado atuando em seu caso?") e o usuário mandou uma mensagem contendo outros dados (como "35 de contribuição") sem responder a essa pergunta:
-   - Apenas confirme a nova informação de forma simples e direta (ex: "Entendido, 35 de contribuição.").
+   - Apenas confirme a nova informação de forma simples e direta (ex: "Certo, 35 de contribuição.").
    - NÃO faça a pergunta pendente de novo no mesmo balão de fala se você acabou de fazê-la na mensagem anterior do histórico. Aguarde o usuário responder à pergunta anterior. Isso evita loops repetitivos inconvenientes caso mensagens cheguem fora de ordem.
-10. CORREÇÃO DE "DOUTORA": ${clientCalledDra ? 'Se o cliente te chamou de "doutora" ou "Dra", comece dizendo EXATAMENTE: "Pode me chamar de Lara." e em seguida adicione um espaço e faça a confirmação dos novos dados usando o prefixo de confirmação (se houver), e faça a próxima pergunta logo em seguida. Exemplo: "Pode me chamar de Lara. Entendido, José, você tem 68 anos e 27 de contribuição. Você já tem advogado atuando no seu caso?"' : 'NÃO se aplica (o cliente não chamou de Dra).'}
+10. CORREÇÃO DE "DOUTORA": ${clientCalledDra ? 'Se o cliente te chamou de "doutora" ou "Dra", comece dizendo EXATAMENTE: "Pode me chamar de Lara." e em seguida adicione um espaço e faça a confirmação dos novos dados usando o prefixo de confirmação (se houver), e faça a próxima pergunta logo em seguida. Exemplo: "Pode me chamar de Lara. Certo, José, você tem 68 anos e 27 de contribuição. Você já tem advogado atuando no seu caso?"' : 'NÃO se aplica (o cliente não chamou de Dra).'}
 11. PROIBIDO CONTRA-POR TRABALHO E BENEFÍCIO: Nunca confronte o cliente sobre ele estar trabalhando vs recebendo benefício. Se precisar saber se trabalha atualmente, pergunte apenas: "Como está sua rotina de trabalho hoje em dia, você está conseguindo trabalhar?" ou "Atualmente, você consegue exercer alguma atividade ou está parado por conta da saúde?".
 12. MULTIPLAS PERGUNTAS CURTAS: Se a triagem exigir mais de uma informação que faça sentido perguntar junto (como no caso de saúde/trabalho), você pode fazer as duas perguntas de forma super curta (ex: "Você está se sentindo apta a volta ao trabalho? Tem alguma outra doença?").
 13. PROIBIDO ABSOLUTO - PEDIDO DE DOCUMENTOS: É TERMINANTEMENTE PROIBIDO pedir ao cliente que envie, tire foto, mande arquivo, encaminhe ou mostre qualquer documento (laudo, receita, exame, carteira de trabalho, etc.). Você NÃO analisa documentos. Você NÃO é especialista jurídica. Você NÃO é médica. Você NÃO é perícia. Você NUNCA diz "me envia", "me manda", "para eu analisar", "preciso ver", "envie os exames", "manda foto". Sua função é APENAS coletar sinais e qualificar. Após confirmar se o cliente possui ou não documentos, ENCERRE a conversa imediatamente com a mensagem de encerramento padrão.
 14. ESCOPO ABSOLUTO DA LARA: Você é uma QUALIFICADORA. Seu único papel é: (1) COLETAR sinais básicos do caso, (2) IDENTIFICAR potencial do caso, (3) ENCAMINHAR para a equipe. Você NÃO resolve, NÃO analisa, NÃO investiga, NÃO dá continuidade aberta além dos passos da triagem. Ao atingir o estado FINISHED, encerre IMEDIATAMENTE com a mensagem de encerramento padrão.
 15. DESVIOS DE ASSUNTO E OFF-TOPIC: Caso o usuário mude de assunto, faça reclamações sobre o governo ou INSS, faça perguntas pessoais (como "qual seu nome?", "quem é você?") ou diga coisas fora da triagem, dê uma resposta extremamente curta de empatia ou esclarecimento (1 única frase curta, variando os termos para nunca parecer repetitiva, ex: "Entendo a sua preocupação", "Te compreendo", "Imagino como deve ser", "Eu sou a Lara, atendente da Dra. Mônica", etc.) e em seguida retorne IMEDIATAMENTE para a pergunta correspondente ao próximo passo da triagem: ${metaPerguntas}. É proibido prolongar conversas fora do assunto ou sair do fluxo de qualificação.
 16. RIGIDEZ NO SEGUIMENTO DA FSM: Você deve obrigatoriamente guiar a conversa pela etapa indicada em "META DA TRIAGEM ATUAL (ETAPA SUGERIDA)". É terminantemente proibido pular etapas ou fazer perguntas de etapas que ainda não foram sugeridas pela FSM (por exemplo: nunca pergunte sobre laudos, documentos ou histórico de contribuição se a FSM indicar que a etapa atual é AWAITING_CURRENT_CONTRIBUTION). Se o cliente trouxer informações de outras etapas antecipadamente, acate-as com naturalidade de forma curta, mas faça a pergunta da etapa pendente sugerida pela FSM.
+17. VARIAÇÃO NAS CONFIRMAÇÕES (NOVO): Ao confirmar dados ou respostas curtas do lead, varie as expressões usadas no início da frase. Use opções como "Anotado", "Certo", "Entendo", "Ok", "Perfeito" de forma natural e alternada. Nunca comece frases seguidas usando a mesma palavra de confirmação (por exemplo: evite usar "Entendido" ou "Certo" mais de uma vez seguida nas respostas).
 
 EXEMPLOS DE RESPOSTAS DA LARA (SIGA EXATAMENTE ESTE ESTILO PUNCHY, SECO E DIRETO NAS ETAPAS CADASTRAIS, MAS ACOLHEDOR NO DESABAFO/LUTO):
 
@@ -758,7 +749,7 @@ Gere a resposta da Lara (retorne APENAS o texto da mensagem a ser enviada ao cli
     console.log(`🧠 Chamando inteligência artificial (Lara Conversacional) para gerar resposta...`);
     let finalReply = await this.generateTextWithFallback(promptSofia);
     if (!finalReply || finalReply.trim() === '') {
-      finalReply = "Entendi. Me conta mais sobre isso pra eu poder te ajudar.";
+      finalReply = "Certo. Me conta mais sobre isso pra eu poder te ajudar.";
     }
     finalReply = finalReply.trim();
 
@@ -1008,8 +999,15 @@ Gere a resposta da Lara (retorne APENAS o texto da mensagem a ser enviada ao cli
 
     // Re-calcular FSM deterministicamente
     const nextStateResolved = this.resolveFSMState(user_data);
-    const finalState = nextStateResolved.state;
+    let finalState = nextStateResolved.state;
     const finalFluxo = nextStateResolved.fluxo_ativo;
+
+    const isClosingReply = /(entrar[aã]o?\s+em\s+contato|encaminhar\s+(suas\s+informações|seu\s+caso)|nossa\s+equipe\s+pode\s+te\s+ajudar)/i.test(finalReply);
+    if (isClosingReply) {
+      console.log(`[FSM FORCE FINISHED] Forçando estado FSM para FINISHED pois a resposta da IA é de encerramento.`);
+      finalState = 'FINISHED';
+    }
+
     const timestamp = new Date().toISOString();
     console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 5. Estado calculado pela FSM: state="${finalState}", fluxo="${finalFluxo || 'N/A'}"`);
 
@@ -1063,37 +1061,22 @@ Gere a resposta da Lara (retorne APENAS o texto da mensagem a ser enviada ao cli
   }
 
   private async generateTextWithFallback(prompt: string) {
-    const modelsToTry = ["gemini-3.1-flash-lite", "gemini-2.5-flash", "gemini-3.5-flash", "gemini-2.5-pro", "gemini-2.5-flash-lite"];
-    let lastError: any = null;
-
-    for (const modelName of modelsToTry) {
-      let attempt = 1;
-      while (attempt <= 2) {
-        try {
-          console.log(`🤖 Solicitando texto com o modelo ${modelName} (Tentativa ${attempt})...`);
-          const model = this.genAI.getGenerativeModel({ model: modelName }, { apiVersion: "v1" });
-          const result = await model.generateContent(prompt);
-          const text = result.response.text();
-          if (text) {
-            console.log(`✅ Resposta gerada com sucesso pelo modelo ${modelName}!`);
-            return text;
-          }
-        } catch (err: any) {
-          console.warn(`⚠️ Erro no modelo ${modelName} (Tentativa ${attempt}): ${err.message}`);
-          lastError = err;
-          
-          if (err.status === 429 && attempt === 1) {
-            console.log(`⚠️ Limite 429 atingido. Aguardando 10 segundos antes de tentar novamente...`);
-            await new Promise(resolve => setTimeout(resolve, 10000));
-            attempt++;
-          } else {
-            break;
-          }
-        }
+    try {
+      console.log(`🤖 Solicitando texto com o modelo gpt-4o-mini (OpenAI)...`);
+      const completion = await this.openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [{ role: "user", content: prompt }],
+      });
+      const text = completion.choices[0]?.message?.content;
+      if (text) {
+        console.log(`✅ Resposta gerada com sucesso pelo modelo gpt-4o-mini!`);
+        return text;
       }
+      throw new Error("Resposta vazia da OpenAI.");
+    } catch (openaiErr: any) {
+      console.error(`❌ Erro no OpenAI (gpt-4o-mini): ${openaiErr.message}`);
+      throw openaiErr;
     }
-
-    throw lastError || new Error("Todos os modelos de texto do Gemini falharam.");
   }
 
   private async updateInternalState(phone: string, currentStep: string, userInput: string, aiReply: string) {
@@ -1179,6 +1162,13 @@ Gere a resposta da Lara (retorne APENAS o texto da mensagem a ser enviada ao cli
 
     // --- FASE DE CLASSIFICAÇÃO AUTOMÁTICA DE FLUXO (ESTEIRA DE DECISÃO INTELIGENTE) ---
     let fluxo_ativo = userData.fluxo_ativo;
+
+    const ageNum = this.parseNumber(userData.idade);
+    const contribYears = this.parseNumber(userData.inss_tempo_carteira);
+
+    if (contribYears >= 15 || (ageNum >= 55 && contribYears >= 5)) {
+      fluxo_ativo = 'APOSENTADORIA';
+    }
 
     if (!fluxo_ativo) {
       const ageNum = this.parseNumber(userData.idade);
