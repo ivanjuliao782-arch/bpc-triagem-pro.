@@ -254,7 +254,7 @@ export default function App() {
                 tempScore += 10;
               }
             } else {
-              // 1. Idade
+              // 1. Idade >= 65 anos: +40 pts
               const parseAge = (v: any) => {
                 if (!v) return 0;
                 const match = String(v).match(/\d+/);
@@ -262,38 +262,44 @@ export default function App() {
               };
               const ageNum = parseAge(userData.idade || age);
               if (ageNum >= 65) tempScore += 40;
-              else if (ageNum >= 50) tempScore += 15;
 
-              // 2. Tempo de Contribuição relevante
-              const parseContrib = (v: any) => {
-                if (!v) return 0;
-                const match = String(v).match(/\d+/);
-                return match ? parseInt(match[0], 10) : 0;
-              };
-              const contribYears = parseContrib(userData.tempo_contribuicao || contributionYears);
-              if (contribYears >= 15) tempScore += 10;
+              // 2. Nunca contribuiu: +20 pts
+              const neverContrib = userData.ja_contribuiu === false ||
+                                   String(userData.inss_tempo_carteira).toLowerCase() === 'nenhum' ||
+                                   String(userData.tempo_parou_contribuir).toLowerCase() === 'nunca' ||
+                                   String(userData.inss_ultima_contribuicao).toLowerCase().includes('não contribuiu');
+              if (neverContrib) tempScore += 20;
 
-              // 3. Doença / Incapacidade
-              const hasDiseaseVal = userData.tem_doenca_ou_limitacao === true || hasDisease;
-              if (hasDiseaseVal) tempScore += 15;
+              // 3. Renda per capita baixa: +20 pts
+              const rendaVal = String(userData.bpc_quem_renda || "").toLowerCase();
+              const isLowIncome = userData.has_no_income === true || 
+                                  userData.sem_renda === true ||
+                                  rendaVal.includes("nenhum") || 
+                                  rendaVal.includes("ninguem") || 
+                                  rendaVal.includes("sem renda") || 
+                                  rendaVal.includes("não tem") ||
+                                  rendaVal.includes("não possui") ||
+                                  (rendaVal.match(/\d+/) && parseInt((rendaVal.match(/\d+/) || [0])[0]) <= 706);
+              if (isLowIncome) tempScore += 20;
 
-              // 4. Critérios da Doutora
-              const hasRecentReport = userData.has_recent_report === true || 
-                                      ((userData.inss_laudos_medicos === true) && hasDiseaseVal);
-              if (hasRecentReport) tempScore += 15;
-              if (userData.has_cad_unico === true) tempScore += 10;
-              if (userData.has_recent_contribution === true) tempScore += 15;
-              if (userData.has_no_income === true) tempScore += 10;
-              if (userData.is_bedridden === true) tempScore += 20;
+              // 4. Mora sozinho/família baixa renda: +10 pts
+              const moraSozinhoOuBaixaRenda = String(userData.bpc_pessoas_casa).toLowerCase().includes("sozinh") ||
+                                              userData.bpc_pessoas_casa === 1 ||
+                                              userData.bpc_pessoas_casa === '1' ||
+                                              isLowIncome;
+              if (moraSozinhoOuBaixaRenda) tempScore += 10;
+
+              // 5. CadÚnico ativo: +10 pts
+              const cadUnicoAtivo = userData.bpc_cad_unico === true || userData.has_cad_unico === true;
+              if (cadUnicoAtivo) tempScore += 10;
             }
 
             scoreValue = Math.min(100, tempScore);
           }
 
           let scoreClass: ScoreClassification = 'Frio';
-          if (scoreValue >= 80) scoreClass = 'Prioridade Máxima';
-          else if (scoreValue >= 60) scoreClass = 'Quente';
-          else if (scoreValue >= 30) scoreClass = 'Morno';
+          if (scoreValue >= 70) scoreClass = 'Quente';
+          else if (scoreValue >= 40) scoreClass = 'Morno';
 
           // Se tem advogado: score zerado e coluna separada
           if (userData.has_lawyer === true) {
@@ -435,7 +441,7 @@ export default function App() {
           updatedTimes[lead.id] = elapsedSeconds;
 
           // Se um lead de alta prioridade passar de 20 minutos (1200 seg) sem atendimento, toca som
-          if (elapsedSeconds >= 1200 && elapsedSeconds < 1205 && lead.scoreClass === 'Prioridade Máxima') {
+          if (elapsedSeconds >= 1200 && elapsedSeconds < 1205 && lead.scoreClass === 'Quente') {
             hasAlertSound = true;
           }
         }
@@ -815,8 +821,8 @@ export default function App() {
                         onClick={() => setSelectedLead(lead)}
                         className="bg-[#12121A] border border-[#1C1C28] hover:border-violet-500/50 p-4 rounded-2xl shadow-xl transition-all hover:scale-[1.02] cursor-pointer group relative overflow-hidden"
                       >
-                        {/* Indicador de Prioridade Máxima */}
-                        {lead.scoreClass === 'Prioridade Máxima' && (
+                        {/* Indicador de Prioridade Máxima (Quente) */}
+                        {lead.scoreClass === 'Quente' && (
                           <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-red-500 to-orange-500"></div>
                         )}
 
@@ -1179,9 +1185,9 @@ export default function App() {
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 h-[calc(100vh-240px)]">
               {/* Lista de Leads Ativos (1/3) */}
               <div className="bg-[#0D0D12] border border-[#1C1C24] rounded-2xl p-6 flex flex-col h-full overflow-hidden">
-                <h3 className="text-sm font-bold text-white uppercase tracking-wider mb-4">Leads em Atendimento</h3>
+                <h3 className="text-sm font-bold text-white uppercase tracking-wider mb-4">Fila de Atendimento</h3>
                 <div className="flex-1 overflow-y-auto space-y-3 custom-scrollbar pr-1">
-                  {leads.filter(l => l.status === 'em_atendimento').map(lead => (
+                  {leads.filter(l => l.status === 'novo_lead' || l.status === 'em_atendimento').map(lead => (
                     <div 
                       key={lead.id}
                       onClick={() => setSelectedLead(lead)}
@@ -1193,7 +1199,13 @@ export default function App() {
                     >
                       <div className="flex justify-between items-start mb-1">
                         <span className="font-bold text-xs">{lead.nome}</span>
-                        <span className="text-[9px] px-1.5 py-0.5 bg-gray-900 border border-gray-800 rounded text-gray-400 font-semibold">{lead.idade} anos</span>
+                        <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded ${
+                          lead.status === 'novo_lead' 
+                          ? 'bg-violet-500/10 text-violet-400 border border-violet-500/20' 
+                          : 'bg-sky-500/10 text-sky-400 border border-sky-500/20'
+                        }`}>
+                          {lead.status === 'novo_lead' ? '🤖 Lara' : '👤 Humano'}
+                        </span>
                       </div>
                       <p className="text-[10px] text-gray-500 font-mono mb-2">{lead.phone}</p>
                       <div className="text-[10px] bg-indigo-500/5 text-indigo-400 px-2 py-1 rounded border border-indigo-500/10 truncate">
@@ -1201,15 +1213,15 @@ export default function App() {
                       </div>
                     </div>
                   ))}
-                  {leads.filter(l => l.status === 'em_atendimento').length === 0 && (
-                    <p className="text-xs text-gray-600 italic text-center py-8">Nenhum lead em atendimento ativo.</p>
+                  {leads.filter(l => l.status === 'novo_lead' || l.status === 'em_atendimento').length === 0 && (
+                    <p className="text-xs text-gray-600 italic text-center py-8">Nenhum lead ativo no momento.</p>
                   )}
                 </div>
               </div>
 
               {/* Chat do WhatsApp Integrado (2/3) */}
               <div className="lg:col-span-2 bg-[#0D0D12] border border-[#1C1C24] rounded-2xl p-6 flex flex-col h-full overflow-hidden justify-between">
-                {selectedLead && selectedLead.status === 'em_atendimento' ? (
+                {selectedLead && (selectedLead.status === 'novo_lead' || selectedLead.status === 'em_atendimento') ? (
                   <div className="flex flex-col h-full justify-between">
                     <div className="flex justify-between items-center pb-3 border-b border-gray-900 mb-4 select-none">
                       <div className="flex items-center gap-3">
@@ -1217,16 +1229,35 @@ export default function App() {
                           {selectedLead.nome.charAt(0)}
                         </div>
                         <div>
-                          <h4 className="text-sm font-bold text-white">{selectedLead.nome}</h4>
-                          <span className="text-[10px] text-gray-500">Operando chat ativo</span>
+                          <div className="flex items-center gap-2">
+                            <h4 className="text-sm font-bold text-white">{selectedLead.nome}</h4>
+                            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${
+                              selectedLead.status === 'novo_lead' 
+                              ? 'bg-violet-500/10 text-violet-400 border border-violet-500/20' 
+                              : 'bg-sky-500/10 text-sky-400 border border-sky-500/20'
+                            }`}>
+                              {selectedLead.status === 'novo_lead' ? '🤖 Lara Ativa' : `👤 Humano (${selectedLead.operador || 'SHOCKWAVE'})`}
+                            </span>
+                          </div>
+                          <span className="text-[10px] text-gray-500">{selectedLead.phone}</span>
                         </div>
                       </div>
-                      <button 
-                        onClick={() => handleWhatsAppClick(selectedLead)}
-                        className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5"
-                      >
-                        <MessageCircle size={14} /> WhatsApp Web
-                      </button>
+                      <div className="flex gap-2">
+                        {selectedLead.status === 'novo_lead' && (
+                          <button 
+                            onClick={() => handleAssumeLead(selectedLead)}
+                            className="px-4 py-2 bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white rounded-xl text-xs font-bold transition-all cursor-pointer"
+                          >
+                            Assumir Lead
+                          </button>
+                        )}
+                        <button 
+                          onClick={() => handleWhatsAppClick(selectedLead)}
+                          className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5"
+                        >
+                          <MessageCircle size={14} /> WhatsApp Web
+                        </button>
+                      </div>
                     </div>
 
                     <div className="flex-1 overflow-y-auto bg-gray-950/80 border border-gray-900 rounded-2xl p-4 space-y-4 custom-scrollbar flex flex-col mb-4">

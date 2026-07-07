@@ -532,6 +532,12 @@ JSON de retorno:`;
     let { data: session } = await this.supabase.from('sofia_sessions').select('*').eq('phone', phone).single();
     console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 2. Estado atual carregado: FSM="${session?.user_data?.state_fsm || 'N/A'}", Step="${session?.step || 'N/A'}"`);
 
+    // 0. GUARDA DE ATENDIMENTO HUMANO: Se o lead já foi assumido por operador humano, silencia o bot
+    if (session && session.user_data?.status === 'em_atendimento') {
+      console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 🔒 BOT MUTADO: Lead assumido por humano.`);
+      return null;
+    }
+
     // 1. Extração prévia de campos do texto antes de qualquer coisa (bloco consolidado)
     let extractedData: any = {};
     if (!isGreeting) {
@@ -1250,7 +1256,7 @@ Gere a resposta da Lara (retorne APENAS o texto reescrito da pergunta base, sem 
         scoreValue += 10;
       }
     } else {
-      // 1. Idade
+      // 1. Idade >= 65 anos: +40 pts
       const parseAge = (v: any) => {
         if (!v) return 0;
         const match = String(v).match(/\d+/);
@@ -1258,34 +1264,36 @@ Gere a resposta da Lara (retorne APENAS o texto reescrito da pergunta base, sem 
       };
       const ageNum = parseAge(user_data?.idade);
       if (ageNum >= 65) scoreValue += 40;
-      else if (ageNum >= 50) scoreValue += 15;
 
-      // 2. Tempo de Contribuição relevante
-      const parseContrib = (v: any) => {
-        if (!v) return 0;
-        const match = String(v).match(/\d+/);
-        return match ? parseInt(match[0], 10) : 0;
-      };
-      const contribYears = parseContrib(user_data?.inss_tempo_carteira || user_data?.tempo_contribuicao);
-      if (contribYears >= 15) scoreValue += 10;
+      // 2. Nunca contribuiu: +20 pts
+      const neverContrib = user_data?.ja_contribuiu === false ||
+                           String(user_data?.inss_tempo_carteira).toLowerCase() === 'nenhum' ||
+                           String(user_data?.tempo_parou_contribuir).toLowerCase() === 'nunca' ||
+                           String(user_data?.inss_ultima_contribuicao).toLowerCase().includes('não contribuiu');
+      if (neverContrib) scoreValue += 20;
 
-      // 3. Doença / Incapacidade
-      const hasDiseaseVal = user_data?.tem_doenca_ou_limitacao === true || (user_data?.doenca && user_data.doenca.toLowerCase() !== 'não');
-      if (hasDiseaseVal) scoreValue += 15;
+      // 3. Renda per capita baixa: +20 pts
+      const rendaVal = String(user_data?.bpc_quem_renda || "").toLowerCase();
+      const isLowIncome = user_data?.has_no_income === true || 
+                          user_data?.sem_renda === true ||
+                          rendaVal.includes("nenhum") || 
+                          rendaVal.includes("ninguem") || 
+                          rendaVal.includes("sem renda") || 
+                          rendaVal.includes("não tem") ||
+                          rendaVal.includes("não possui") ||
+                          (rendaVal.match(/\d+/) && parseInt((rendaVal.match(/\d+/) || [0])[0]) <= 706);
+      if (isLowIncome) scoreValue += 20;
 
-      // 4. Critérios da Doutora
-      const hasRecentReport = user_data?.has_recent_report === true || 
-                              ((user_data?.inss_laudos_medicos === true) && hasDiseaseVal);
-      const hasCadUnico = user_data?.has_cad_unico === true;
-      const hasRecentContrib = user_data?.has_recent_contribution === true;
-      const hasNoIncome = user_data?.has_no_income === true;
-      const isBedridden = user_data?.is_bedridden === true;
+      // 4. Mora sozinho/família baixa renda: +10 pts
+      const moraSozinhoOuBaixaRenda = String(user_data?.bpc_pessoas_casa).toLowerCase().includes("sozinh") ||
+                                      user_data?.bpc_pessoas_casa === 1 ||
+                                      user_data?.bpc_pessoas_casa === '1' ||
+                                      isLowIncome;
+      if (moraSozinhoOuBaixaRenda) scoreValue += 10;
 
-      if (hasRecentReport) scoreValue += 15;
-      if (hasCadUnico) scoreValue += 10;
-      if (hasRecentContrib) scoreValue += 15;
-      if (hasNoIncome) scoreValue += 10;
-      if (isBedridden) scoreValue += 20;
+      // 5. CadÚnico ativo: +10 pts
+      const cadUnicoAtivo = user_data?.bpc_cad_unico === true || user_data?.has_cad_unico === true;
+      if (cadUnicoAtivo) scoreValue += 10;
     }
 
     let score_percent = Math.min(100, scoreValue);
