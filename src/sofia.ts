@@ -724,9 +724,6 @@ JSON de retorno:`;
       }
     }
 
-    const hasSentMessagesBefore = history.length > 2;
-    const hasSaidLara = hasSentMessagesBefore && history.some((h: any) => h.role === 'assistant' && /\blara\b/i.test(h.content));
-
     const nonLaraNames = ["doutora", "dra", "senhora", "moça", "moca", "assistente", "atendente", "robô", "robo"];
     const calledWrongName = nonLaraNames.some(name => {
       if (name === 'dra') {
@@ -734,8 +731,9 @@ JSON de retorno:`;
       }
       return text.toLowerCase().includes(name);
     });
-    // Só faz a correção se ela NUNCA falou o nome dela na sessão antes
-    const clientCalledWrongName = calledWrongName && !hasSaidLara;
+
+    const alreadyCorrected = history.some((h: any) => h.role === 'assistant' && h.content.includes("Pode me chamar de Lara."));
+    const clientCalledWrongName = calledWrongName && !alreadyCorrected;
 
     let metaPerguntas = "";
     if (resolved.fluxo_ativo === 'EXCECAO') {
@@ -1041,10 +1039,6 @@ Gere a resposta da Lara (retorne APENAS o texto da mensagem a ser enviada ao cli
       }
     }
 
-    // Se ela já disse o nome dela no histórico, remove qualquer repetição acidental da palavra "Lara"
-    if (hasSaidLara) {
-      finalReply = finalReply.replace(/\blara\b/gi, 'atendente');
-    }
 
     // Limpar sofrimento_relatado e contexto_offtopic após usá-los uma vez (para não repetir nos próximos turnos!)
 
