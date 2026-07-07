@@ -1436,15 +1436,30 @@ export default function App() {
                 </div>
 
                 {/* Score Configs */}
-                <div className="space-y-4">
-                  <h4 className="text-sm font-bold text-white uppercase tracking-wider">Pesos do Score Previdenciário</h4>
-                  
-                  <div className="p-4 bg-gray-900/40 border border-gray-800/50 rounded-xl space-y-3 text-xs">
-                    <div className="flex justify-between"><span>28+ anos de contribuição:</span> <span className="text-indigo-400 font-bold">+30 pontos</span></div>
-                    <div className="flex justify-between"><span>Doença declarada:</span> <span className="text-indigo-400 font-bold">+25 pontos</span></div>
-                    <div className="flex justify-between"><span>Acidente recente:</span> <span className="text-indigo-400 font-bold">+20 pontos</span></div>
-                    <div className="flex justify-between"><span>Idade 50+:</span> <span className="text-indigo-400 font-bold">+15 pontos</span></div>
-                    <div className="flex justify-between"><span>Resposta imediata:</span> <span className="text-indigo-400 font-bold">+10 pontos</span></div>
+                <div className="space-y-6">
+                  <div className="space-y-2">
+                    <h4 className="text-sm font-bold text-white uppercase tracking-wider">Pesos do Score (Aposentadoria)</h4>
+                    <div className="p-4 bg-gray-900/40 border border-gray-800/50 rounded-xl space-y-2 text-xs">
+                      <div className="flex justify-between"><span>28+ anos de contribuição:</span> <span className="text-indigo-400 font-bold">+40 pontos</span></div>
+                      <div className="flex justify-between"><span>15-27 anos de contribuição:</span> <span className="text-indigo-400 font-bold">+25 pontos</span></div>
+                      <div className="flex justify-between"><span>Idade 60+:</span> <span className="text-indigo-400 font-bold">+20 pontos</span></div>
+                      <div className="flex justify-between"><span>Idade 55-59:</span> <span className="text-indigo-400 font-bold">+15 pontos</span></div>
+                      <div className="flex justify-between"><span>Sem advogado constituído:</span> <span className="text-indigo-400 font-bold">+15 pontos</span></div>
+                      <div className="flex justify-between"><span>Trabalho especial ou rural:</span> <span className="text-indigo-400 font-bold">+20 pontos</span></div>
+                      <div className="flex justify-between"><span>Carteira assinada:</span> <span className="text-indigo-400 font-bold">+10 pontos</span></div>
+                      <div className="flex justify-between"><span>Documentos em mãos:</span> <span className="text-indigo-400 font-bold">+10 pontos</span></div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <h4 className="text-sm font-bold text-white uppercase tracking-wider">Pesos do Score (BPC / LOAS)</h4>
+                    <div className="p-4 bg-gray-900/40 border border-gray-800/50 rounded-xl space-y-2 text-xs">
+                      <div className="flex justify-between"><span>Idade 65+ anos:</span> <span className="text-indigo-400 font-bold">+40 pontos</span></div>
+                      <div className="flex justify-between"><span>Nunca contribuiu para o INSS:</span> <span className="text-indigo-400 font-bold">+20 pontos</span></div>
+                      <div className="flex justify-between"><span>Renda per capita baixa {"(<= 1/2 SM)"}:</span> <span className="text-indigo-400 font-bold">+20 pontos</span></div>
+                      <div className="flex justify-between"><span>Mora sozinho / família de baixa renda:</span> <span className="text-indigo-400 font-bold">+10 pontos</span></div>
+                      <div className="flex justify-between"><span>CadÚnico ativo:</span> <span className="text-indigo-400 font-bold">+10 pontos</span></div>
+                    </div>
                   </div>
                 </div>
               </div>
