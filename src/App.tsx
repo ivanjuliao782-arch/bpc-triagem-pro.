@@ -277,9 +277,9 @@ export default function App() {
                                   rendaVal.includes("nenhum") || 
                                   rendaVal.includes("ninguem") || 
                                   rendaVal.includes("sem renda") || 
-                                  rendaVal.includes("não tem") ||
-                                  rendaVal.includes("não possui") ||
-                                  (rendaVal.match(/\d+/) && parseInt((rendaVal.match(/\d+/) || [0])[0]) <= 706);
+                                  rendaVal.includes("não tem") || 
+                                  rendaVal.includes("não possui") || 
+                                  (rendaVal.match(/\d+/) && parseInt((rendaVal.match(/\d+/) || ["0"])[0]) <= 706);
               if (isLowIncome) tempScore += 20;
 
               // 4. Mora sozinho/família baixa renda: +10 pts

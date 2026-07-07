@@ -1281,7 +1281,7 @@ Gere a resposta da Lara (retorne APENAS o texto reescrito da pergunta base, sem 
                           rendaVal.includes("sem renda") || 
                           rendaVal.includes("não tem") ||
                           rendaVal.includes("não possui") ||
-                          (rendaVal.match(/\d+/) && parseInt((rendaVal.match(/\d+/) || [0])[0]) <= 706);
+                          (rendaVal.match(/\d+/) && parseInt((rendaVal.match(/\d+/) || ["0"])[0]) <= 706);
       if (isLowIncome) scoreValue += 20;
 
       // 4. Mora sozinho/família baixa renda: +10 pts
