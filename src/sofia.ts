@@ -180,6 +180,20 @@ export class SofiaEngine {
       .replace(/[^\w\s]/g, "")
       .trim();
 
+    // Auto-inferência de ja_contribuiu = false
+    if (
+      cleanText.includes("nunca contrib") ||
+      cleanText.includes("nunca paguei") ||
+      cleanText.includes("nunca tive carteira") ||
+      cleanText.includes("nunca trabalhei com carteira") ||
+      cleanText.includes("nao tenho carteira") ||
+      cleanText.includes("nao contribuo") ||
+      cleanText.includes("nunca recolhi")
+    ) {
+      mergedData.ja_contribuiu = false;
+      mergedData.inss_tempo_carteira = 'nenhum';
+    }
+
     // 1. trabalha_atualmente: false auto-inference
     if (
       mergedData.has_no_income === true || 
@@ -449,9 +463,67 @@ JSON de retorno:`;
     }
 
     if (!session) {
-      // Cria a sessão inicial vazia de histórico para permitir que a IA se apresente livremente
-      const initialUserData = {
-        history: [],
+      const hour = parseInt(new Date().toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', hour12: false }));
+      let saudacao = "Boa noite";
+      if (hour >= 6 && hour < 12) saudacao = "Bom dia";
+      else if (hour >= 12 && hour < 18) saudacao = "Boa tarde";
+
+      const defaultGreeting = `${saudacao}! Tudo bem?\nMe chamo Lara, sou atendente do escritório da Dra. Mônica Lucioli. Com quem eu falo?`;
+
+      // 3. Se o lead vier direto com problema sem dar o nome:
+      const leadSentProblemWithoutName = !extractedData.nome_usuario && (
+        extractedData.idade || 
+        extractedData.doenca || 
+        extractedData.deficiencia || 
+        extractedData.tempo_contribuicao || 
+        extractedData.inss_tempo_carteira || 
+        text.length > 30
+      );
+
+      if (leadSentProblemWithoutName) {
+        const finalReply = `${saudacao}! Me chamo Lara, sou atendente do escritório da Dra. Mônica Lucioli. Entendo sua situação. Me fala seu nome para eu registrar e te direcionar certinho.`;
+        const initialUserData = {
+          history: [
+            { role: 'user', content: text },
+            { role: 'assistant', content: finalReply }
+          ],
+          state_fsm: 'AWAITING_NAME',
+          ...extractedData
+        };
+        await this.supabase.rpc('save_session_data', {
+          p_phone: phone,
+          p_step: 'welcome',
+          p_user_data_updates: initialUserData
+        });
+        console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 9. Resposta final enviada ao cliente (upfront problem without name): "${finalReply}"`);
+        return finalReply;
+      }
+
+      // Se for apenas uma saudação simples e não informou nome
+      if (!extractedData.nome_usuario) {
+        const initialUserData = {
+          history: [
+            { role: 'user', content: text },
+            { role: 'assistant', content: defaultGreeting }
+          ],
+          state_fsm: 'AWAITING_NAME',
+          ...extractedData
+        };
+        await this.supabase.rpc('save_session_data', {
+          p_phone: phone,
+          p_step: 'welcome',
+          p_user_data_updates: initialUserData
+        });
+        console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 9. Resposta final enviada ao cliente (default greeting): "${defaultGreeting}"`);
+        return defaultGreeting;
+      }
+
+      // Se o usuário informou o nome de primeira:
+      const initialUserData: any = {
+        history: [
+          { role: 'assistant', content: defaultGreeting },
+          { role: 'user', content: text }
+        ],
         state_fsm: 'AWAITING_NAME',
         ...extractedData
       };
@@ -507,7 +579,7 @@ JSON de retorno:`;
         updatedUserData = {
           ...extractedData,
           history: [
-            { role: 'assistant', content: `Olá! Tudo bem? Sou a Lara, do escritório da Dra. Mônica Lucioli. Me fala seu nome pra eu te chamar certinho` },
+            { role: 'assistant', content: `Olá! Tudo bem?\nMe chamo Lara, sou atendente do escritório da Dra. Mônica Lucioli. Com quem eu falo?` },
             { role: 'user', content: text }
           ],
           state_fsm: 'AWAITING_NAME',
@@ -561,6 +633,26 @@ JSON de retorno:`;
       user_data.fluxo_ativo = resolved.fluxo_ativo;
     }
     user_data.state_fsm = stateFsm;
+
+    // GUARDA DETERMINÍSTICO 0: Se o estado calculado for FINISHED, encerra deterministamente sem chamar a IA
+    if (stateFsm === 'FINISHED') {
+      const finalReply = "Com base nas informações nossa equipe pode te ajudar. Em 1 minuto um profissional entrará em contato com você.";
+      const newHistory = [...history, { role: 'user', content: text }, { role: 'assistant', content: finalReply }];
+      
+      const updates = {
+        history: newHistory,
+        state_fsm: 'FINISHED'
+      };
+
+      await this.supabase.rpc('save_session_data', {
+        p_phone: phone,
+        p_step: 'finished',
+        p_user_data_updates: updates
+      });
+
+      console.log(`[INSTRUMENTAÇÃO] [${new Date().toISOString()}] [Lead: ${phone}] 9. Resposta final enviada ao cliente (FSM FINISHED): "${finalReply}"`);
+      return finalReply;
+    }
 
     // GUARDA DETERMINÍSTICO 1: Força o Passo 2 sem chamar a IA apenas se o texto de fato se parecer com um nome próprio real
     if (stateFsm === 'AWAITING_NAME' && text.trim().split(' ').length <= 4 && this.isValidName(text)) {
@@ -619,15 +711,38 @@ JSON de retorno:`;
       }
     }
 
+    const nonLaraNames = ["doutora", "dra", "senhora", "moça", "moca", "assistente", "atendente", "robô", "robo"];
+    const calledWrongName = nonLaraNames.some(name => {
+      if (name === 'dra') {
+        return /\bdra\b/i.test(text.toLowerCase());
+      }
+      return text.toLowerCase().includes(name);
+    });
+    const alreadyCorrected = history.some((h: any) => h.role === 'assistant' && h.content.includes("Pode me chamar de Lara."));
+    const clientCalledWrongName = calledWrongName && !alreadyCorrected;
+
     let metaPerguntas = "";
     if (resolved.fluxo_ativo === 'EXCECAO') {
       metaPerguntas = EXCECAO_QUESTIONS.map(q => `- ${q}`).join("\n");
     } else {
-      const questionsList = STATE_QUESTIONS[stateFsm];
+      let questionsList = STATE_QUESTIONS[stateFsm];
+      if (stateFsm === 'BPC_AWAITING_HOUSEHOLD_INCOME') {
+        const moraSozinho = user_data.bpc_pessoas_casa && (
+          String(user_data.bpc_pessoas_casa).toLowerCase().includes('sozinh') ||
+          String(user_data.bpc_pessoas_casa).toLowerCase().includes('moro só') ||
+          String(user_data.bpc_pessoas_casa).toLowerCase().includes('moro so') ||
+          String(user_data.bpc_pessoas_casa).toLowerCase().includes('apenas eu') ||
+          String(user_data.bpc_pessoas_casa).toLowerCase().includes('somente eu') ||
+          String(user_data.bpc_pessoas_casa).toLowerCase() === 'eu' ||
+          String(user_data.bpc_pessoas_casa).toLowerCase().includes('1 pessoa') ||
+          String(user_data.bpc_pessoas_casa).toLowerCase().includes('uma pessoa')
+        );
+        if (moraSozinho) {
+          questionsList = ["Você recebe algum dinheiro? Bolsa família, pensão, aposentadoria ou alguma outra renda?"];
+        }
+      }
       metaPerguntas = questionsList ? questionsList.map(q => `- ${q}`).join("\n") : "";
     }
-
-    const clientCalledDra = text.toLowerCase().includes("doutora") || text.toLowerCase().includes(" dra ");
 
     const confirmParts: string[] = [];
     let nameVal = user_data.nome_usuario || "";
@@ -636,21 +751,63 @@ JSON de retorno:`;
     // Só confirmamos os dados se eles foram fornecidos espontaneamente (upfront) antes de a Lara perguntar por eles.
     const hasAskedAge = history.some((h: any) => h.role === 'assistant' && (h.content.toLowerCase().includes('idade') || h.content.toLowerCase().includes('quantos anos')));
     const hasAskedContrib = history.some((h: any) => h.role === 'assistant' && (h.content.toLowerCase().includes('contribuiu') || h.content.toLowerCase().includes('tempo de contribuição') || h.content.toLowerCase().includes('tempo você já contribuiu') || h.content.toLowerCase().includes('tempo de carteira')));
+    const hasAskedHousehold = history.some((h: any) => h.role === 'assistant' && (h.content.toLowerCase().includes('quem mora') || h.content.toLowerCase().includes('mora com você')));
+    const hasAskedDisease = history.some((h: any) => h.role === 'assistant' && h.content.toLowerCase().includes('doença'));
+    const hasAskedDisability = history.some((h: any) => h.role === 'assistant' && h.content.toLowerCase().includes('deficiência'));
     
     // Verificamos se já confirmamos esses dados anteriormente no histórico
     const hasConfirmedAge = history.some((h: any) => h.role === 'assistant' && (h.content.toLowerCase().includes('entendido') || h.content.toLowerCase().includes('certo') || h.content.toLowerCase().includes('ok') || h.content.toLowerCase().includes('anotado')) && h.content.toLowerCase().includes('anos'));
-    const hasConfirmedContrib = history.some((h: any) => h.role === 'assistant' && (h.content.toLowerCase().includes('entendido') || h.content.toLowerCase().includes('certo') || h.content.toLowerCase().includes('ok') || h.content.toLowerCase().includes('anotado')) && h.content.toLowerCase().includes('contribuição'));
+    const hasConfirmedContrib = history.some((h: any) => h.role === 'assistant' && (h.content.toLowerCase().includes('entendido') || h.content.toLowerCase().includes('certo') || h.content.toLowerCase().includes('ok') || h.content.toLowerCase().includes('anotado')) && (h.content.toLowerCase().includes('contribuição') || h.content.toLowerCase().includes('contribuiu')));
+    const hasConfirmedHousehold = history.some((h: any) => h.role === 'assistant' && (h.content.toLowerCase().includes('entendido') || h.content.toLowerCase().includes('certo') || h.content.toLowerCase().includes('ok') || h.content.toLowerCase().includes('anotado')) && (h.content.toLowerCase().includes('sozinha') || h.content.toLowerCase().includes('sozinho') || h.content.toLowerCase().includes('mora com') || h.content.toLowerCase().includes('morando só')));
+    const hasConfirmedDisease = history.some((h: any) => h.role === 'assistant' && (h.content.toLowerCase().includes('entendido') || h.content.toLowerCase().includes('certo') || h.content.toLowerCase().includes('ok') || h.content.toLowerCase().includes('anotado')) && h.content.toLowerCase().includes('doença'));
+    const hasConfirmedDisability = history.some((h: any) => h.role === 'assistant' && (h.content.toLowerCase().includes('entendido') || h.content.toLowerCase().includes('certo') || h.content.toLowerCase().includes('ok') || h.content.toLowerCase().includes('anotado')) && h.content.toLowerCase().includes('deficiência'));
 
     const shouldConfirmAge = user_data.idade && !hasAskedAge && !hasConfirmedAge;
-    const shouldConfirmContrib = (user_data.inss_tempo_carteira || user_data.tempo_contribuicao) && !hasAskedContrib && !hasConfirmedContrib;
+    
+    // Contribuição
+    const rawContrib = user_data.inss_tempo_carteira || user_data.tempo_contribuicao || user_data.tempo_parou_contribuir || user_data.inss_ultima_contribuicao;
+    const shouldConfirmContrib = rawContrib && !hasAskedContrib && !hasConfirmedContrib;
+    
+    // Moradia/Household
+    const shouldConfirmHousehold = user_data.bpc_pessoas_casa && !hasAskedHousehold && !hasConfirmedHousehold;
+    
+    // Doença
+    const shouldConfirmDisease = user_data.doenca && user_data.doenca.toLowerCase() !== 'não' && !hasAskedDisease && !hasConfirmedDisease;
+    
+    // Deficiência
+    const shouldConfirmDisability = user_data.tem_deficiencia && !hasAskedDisability && !hasConfirmedDisability;
 
     if (shouldConfirmAge) {
       const idadeLimpa = String(user_data.idade).replace(/\s*anos?/i, "").trim();
-      confirmParts.push(`${idadeLimpa} anos`);
+      confirmParts.push(`tem ${idadeLimpa} anos`);
     }
     if (shouldConfirmContrib) {
-      const contribLimpa = String(user_data.inss_tempo_carteira || user_data.tempo_contribuicao).replace(/\s*anos?/i, "").trim();
-      confirmParts.push(`${contribLimpa} de contribuição`);
+      const contribLimpa = String(rawContrib).toLowerCase();
+      if (contribLimpa.includes('nunca') || contribLimpa.includes('nenhum') || contribLimpa.includes('nao contribui')) {
+        confirmParts.push("nunca contribuiu");
+      } else {
+        const anosLimpos = contribLimpa.replace(/\s*anos?/i, "").trim();
+        confirmParts.push(`tem ${anosLimpos} de contribuição`);
+      }
+    }
+    if (shouldConfirmHousehold) {
+      const moraSozinho = String(user_data.bpc_pessoas_casa).toLowerCase().includes('sozinh') ||
+                          String(user_data.bpc_pessoas_casa).toLowerCase().includes('moro só') ||
+                          String(user_data.bpc_pessoas_casa).toLowerCase().includes('moro so') ||
+                          String(user_data.bpc_pessoas_casa).toLowerCase().includes('apenas eu') ||
+                          String(user_data.bpc_pessoas_casa).toLowerCase().includes('somente eu') ||
+                          String(user_data.bpc_pessoas_casa).toLowerCase() === 'eu';
+      if (moraSozinho) {
+        confirmParts.push("mora sozinha");
+      } else {
+        confirmParts.push(`mora com ${user_data.bpc_pessoas_casa}`);
+      }
+    }
+    if (shouldConfirmDisease) {
+      confirmParts.push(`tem ${user_data.doenca}`);
+    }
+    if (shouldConfirmDisability) {
+      confirmParts.push("tem deficiência");
     }
 
     let confirmPrompt = "";
@@ -658,7 +815,17 @@ JSON de retorno:`;
       const nameStr = nameVal ? `, ${nameVal},` : "";
       const variations = ['Certo', 'Ok', 'Anotado'];
       const prefixWord = variations[Math.floor(Math.random() * variations.length)];
-      const confirmExemplo = `${prefixWord}${nameStr} você tem ${confirmParts.join(" e ")}.`;
+      
+      let confirmStr = "";
+      if (confirmParts.length === 1) {
+        confirmStr = confirmParts[0];
+      } else if (confirmParts.length === 2) {
+        confirmStr = confirmParts.join(" e ");
+      } else {
+        confirmStr = confirmParts.slice(0, -1).join(", ") + " e " + confirmParts[confirmParts.length - 1];
+      }
+
+      const confirmExemplo = `${prefixWord}${nameStr} você ${confirmStr}.`;
       confirmPrompt = `\n⚠️ DIRETRIZ CRÍTICA DE CONFIRMAÇÃO DE DADOS:
 O cliente forneceu novas informações que ainda não foram confirmadas verbalmente por você.
 Você DEVE OBRIGATORIAMENTE iniciar a sua resposta exatamente com o prefixo de confirmação: "${confirmExemplo}".
@@ -673,7 +840,7 @@ DIRETRIZES DE COMUNICAÇÃO E REGRAS DE NEGÓCIO (OBRIGATÓRIO):
 1. SEM EMOJIS: É terminantemente proibido usar emojis ou carinhas de texto (como 😊, 👍, 😭, etc.) nas suas respostas. Use apenas texto limpo.
 2. MENSAGENS EXTREMAMENTE CURTAS: Escreva respostas muito curtas (máximo 1 ou 2 linhas). Vá direto à pergunta sem enrolação desnecessária.
 3. PROIBIDO NOMES DE BENEFÍCIOS E APOSENTADORIA: Nunca diga siglas ou termos como BPC, LOAS, benefício de prestação continuada, aposentadoria por invalidez/idade/tempo, auxílio-doença, etc. Use termos totalmente genéricos como "seu caso", "sua situação", "seu processo" ou "podemos te ajudar por aqui".
-4. PRIMEIRA INTERAÇÃO (ABERTURA): Se o histórico de mensagens estiver vazio (primeira mensagem do cliente), você deve dar as boas-vindas de forma humana, direta e profissional. Siga exatamente ou no mesmo estilo de (lembrando da regra de NÃO usar emojis): "Boa tarde! Tudo bem? Eu sou a Lara, do escritório da Dra. Mônica. Me fale seu nome por favor." (ou adapte a saudação dependendo do horário do dia).
+4. PRIMEIRA INTERAÇÃO (ABERTURA): Se o histórico de mensagens estiver vazio (primeira mensagem do cliente), você deve dar as boas-vindas de forma humana, direta e profissional. Siga exatamente ou no mesmo estilo de (lembrando da regra de NÃO usar emojis): "Boa tarde! Tudo bem?\nMe chamo Lara, sou atendente do escritório da Dra. Mônica Lucioli. Com quem eu falo?" (ou adapte a saudação dependendo do horário do dia).
 5. SENTIMENTOS E EMPATIA REAL PARA VIÚVAS E PROBLEMAS DE SAÚDE (CRÍTICO):
    Se o cliente relatar falecimento/luto (como viúvas/viúvos) ou desabafar sobre sofrimento e dores graves de saúde, você DEVE sim expressar sentimentos sinceros e acolhimento humano no início da mensagem antes de fazer a pergunta (ex: "Poxa, meus sentimentos pela perda do seu marido", "Nossa, sinto muito por você estar passando por essa dor"). 
    ATENÇÃO: Não use frases artificiais de robô terapeuta ou corporativo (como "Compreendo perfeitamente, a dor na coluna exige cuidados..."). Fale como uma pessoa de verdade e calorosa do escritório. 
@@ -684,7 +851,7 @@ DIRETRIZES DE COMUNICAÇÃO E REGRAS DE NEGÓCIO (OBRIGATÓRIO):
 9. EVITAR REPETIÇÕES DE PERGUNTAS (CRÍTICO): Se a última mensagem enviada por você já era a pergunta da etapa atual da FSM (ex: "Você já tem advogado atuando em seu caso?") e o usuário mandou uma mensagem contendo outros dados (como "35 de contribuição") sem responder a essa pergunta:
    - Apenas confirme a nova informação de forma simples e direta (ex: "Certo, 35 de contribuição.").
    - NÃO faça a pergunta pendente de novo no mesmo balão de fala se você acabou de fazê-la na mensagem anterior do histórico. Aguarde o usuário responder à pergunta anterior. Isso evita loops repetitivos inconvenientes caso mensagens cheguem fora de ordem.
-10. CORREÇÃO DE "DOUTORA": ${clientCalledDra ? 'Se o cliente te chamou de "doutora" ou "Dra", comece dizendo EXATAMENTE: "Pode me chamar de Lara." e em seguida adicione um espaço e faça a confirmação dos novos dados usando o prefixo de confirmação (se houver), e faça a próxima pergunta logo em seguida. Exemplo: "Pode me chamar de Lara. Certo, José, você tem 68 anos e 27 de contribuição. Você já tem advogado atuando no seu caso?"' : 'NÃO se aplica (o cliente não chamou de Dra).'}
+10. CORREÇÃO DE NOME: ${clientCalledWrongName ? 'Se o cliente te chamou por outro nome (como doutora, senhora, moça, assistente, etc.), comece a mensagem dizendo EXATAMENTE: "Pode me chamar de Lara." e em seguida continue o fluxo normalmente.' : 'NÃO se aplica (o cliente não chamou por outro nome, ou você já corrigiu antes com "Pode me chamar de Lara.").'}
 11. PROIBIDO CONTRA-POR TRABALHO E BENEFÍCIO: Nunca confronte o cliente sobre ele estar trabalhando vs recebendo benefício. Se precisar saber se trabalha atualmente, pergunte apenas: "Como está sua rotina de trabalho hoje em dia, você está conseguindo trabalhar?" ou "Atualmente, você consegue exercer alguma atividade ou está parado por conta da saúde?".
 12. MULTIPLAS PERGUNTAS CURTAS: Se a triagem exigir mais de uma informação que faça sentido perguntar junto (como no caso de saúde/trabalho), você pode fazer as duas perguntas de forma super curta (ex: "Você está se sentindo apta a volta ao trabalho? Tem alguma outra doença?").
 13. PROIBIDO ABSOLUTO - PEDIDO DE DOCUMENTOS: É TERMINANTEMENTE PROIBIDO pedir ao cliente que envie, tire foto, mande arquivo, encaminhe ou mostre qualquer documento (laudo, receita, exame, carteira de trabalho, etc.). Você NÃO analisa documentos. Você NÃO é especialista jurídica. Você NÃO é médica. Você NÃO é perícia. Você NUNCA diz "me envia", "me manda", "para eu analisar", "preciso ver", "envie os exames", "manda foto". Sua função é APENAS coletar sinais e qualificar. Após confirmar se o cliente possui ou não documentos, ENCERRE a conversa imediatamente com a mensagem de encerramento padrão.
@@ -830,6 +997,14 @@ Gere a resposta da Lara (retorne APENAS o texto da mensagem a ser enviada ao cli
     if (hasForbiddenDocumentRequest(finalReply)) {
       console.warn(`🚨 ALERTA: Resposta contém pedido de documento proibido: "${finalReply}". Substituindo por encerramento.`);
       finalReply = `Perfeito. Vou encaminhar suas informações para a equipe. Em breve entrarão em contato com você.`;
+    }
+
+    // Enforça a correção de nome determinística caso o cliente tenha chamado por outro nome
+    if (clientCalledWrongName) {
+      console.log(`🔒 ENFORCING DETERMINISTIC NAME CORRECTION: Prepended 'Pode me chamar de Lara. ' to reply.`);
+      if (!finalReply.includes("Pode me chamar de Lara")) {
+        finalReply = `Pode me chamar de Lara. ${finalReply}`;
+      }
     }
 
     // Limpar sofrimento_relatado e contexto_offtopic após usá-los uma vez (para não repetir nos próximos turnos!)
@@ -1235,19 +1410,6 @@ Gere a resposta da Lara (retorne APENAS o texto da mensagem a ser enviada ao cli
       if (userData.bpc_pessoas_casa === undefined || userData.bpc_pessoas_casa === null || String(userData.bpc_pessoas_casa).trim() === '') {
         return { state: 'BPC_AWAITING_HOUSEHOLD', fluxo_ativo };
       }
-      const moraSozinho = userData.bpc_pessoas_casa && (
-        String(userData.bpc_pessoas_casa).toLowerCase().includes('sozinh') ||
-        String(userData.bpc_pessoas_casa).toLowerCase().includes('moro só') ||
-        String(userData.bpc_pessoas_casa).toLowerCase().includes('moro so') ||
-        String(userData.bpc_pessoas_casa).toLowerCase().includes('apenas eu') ||
-        String(userData.bpc_pessoas_casa).toLowerCase().includes('somente eu') ||
-        String(userData.bpc_pessoas_casa).toLowerCase() === 'eu' ||
-        String(userData.bpc_pessoas_casa).toLowerCase().includes('1 pessoa') ||
-        String(userData.bpc_pessoas_casa).toLowerCase().includes('uma pessoa')
-      );
-      if (moraSozinho && (userData.bpc_quem_renda === undefined || userData.bpc_quem_renda === null || String(userData.bpc_quem_renda).trim() === '')) {
-        userData.bpc_quem_renda = 'sozinho';
-      }
       if (userData.bpc_quem_renda === undefined || userData.bpc_quem_renda === null || String(userData.bpc_quem_renda).trim() === '') {
         return { state: 'BPC_AWAITING_HOUSEHOLD_INCOME', fluxo_ativo };
       }
@@ -1285,19 +1447,6 @@ Gere a resposta da Lara (retorne APENAS o texto da mensagem a ser enviada ao cli
     if (fluxo_ativo === 'BPC_IDOSO' || fluxo_ativo === 'BPC_DEFICIENTE') {
       if (userData.bpc_pessoas_casa === undefined || userData.bpc_pessoas_casa === null || String(userData.bpc_pessoas_casa).trim() === '') {
         return { state: 'BPC_AWAITING_HOUSEHOLD', fluxo_ativo };
-      }
-      const moraSozinho = userData.bpc_pessoas_casa && (
-        String(userData.bpc_pessoas_casa).toLowerCase().includes('sozinh') ||
-        String(userData.bpc_pessoas_casa).toLowerCase().includes('moro só') ||
-        String(userData.bpc_pessoas_casa).toLowerCase().includes('moro so') ||
-        String(userData.bpc_pessoas_casa).toLowerCase().includes('apenas eu') ||
-        String(userData.bpc_pessoas_casa).toLowerCase().includes('somente eu') ||
-        String(userData.bpc_pessoas_casa).toLowerCase() === 'eu' ||
-        String(userData.bpc_pessoas_casa).toLowerCase().includes('1 pessoa') ||
-        String(userData.bpc_pessoas_casa).toLowerCase().includes('uma pessoa')
-      );
-      if (moraSozinho && (userData.bpc_quem_renda === undefined || userData.bpc_quem_renda === null || String(userData.bpc_quem_renda).trim() === '')) {
-        userData.bpc_quem_renda = 'sozinho';
       }
       if (userData.bpc_quem_renda === undefined || userData.bpc_quem_renda === null || String(userData.bpc_quem_renda).trim() === '') {
         return { state: 'BPC_AWAITING_HOUSEHOLD_INCOME', fluxo_ativo };
