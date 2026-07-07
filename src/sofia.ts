@@ -194,6 +194,19 @@ export class SofiaEngine {
       mergedData.inss_tempo_carteira = 'nenhum';
     }
 
+    // Auto-inferência de bpc_pessoas_casa = 'sozinha' se o lead diz que mora só
+    if (
+      cleanText.includes("moro sozinha") ||
+      cleanText.includes("moro sozinho") ||
+      cleanText.includes("moro so") ||
+      cleanText.includes("apenas eu") ||
+      cleanText.includes("somente eu") ||
+      cleanText.includes("eu sozinha") ||
+      cleanText.includes("eu sozinho")
+    ) {
+      mergedData.bpc_pessoas_casa = 'sozinha';
+    }
+
     // 1. trabalha_atualmente: false auto-inference
     if (
       mergedData.has_no_income === true || 
@@ -1007,6 +1020,23 @@ Gere a resposta da Lara (retorne APENAS o texto da mensagem a ser enviada ao cli
       }
     }
 
+    // Enforça a saudação de abertura caso o cliente tenha mandado o nome de primeira (upfront)
+    const isUpfrontFirstReply = history.length === 2 && 
+                                 history[0].role === 'assistant' && 
+                                 history[0].content.includes("Com quem eu falo?") &&
+                                 history[1].role === 'user';
+    if (isUpfrontFirstReply) {
+      const hour = parseInt(new Date().toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', hour12: false }));
+      let saudacao = "Boa noite";
+      if (hour >= 6 && hour < 12) saudacao = "Bom dia";
+      else if (hour >= 12 && hour < 18) saudacao = "Boa tarde";
+      
+      const greetingPrefix = `${saudacao}! Tudo bem?\nMe chamo Lara, sou atendente do escritório da Dra. Mônica Lucioli. `;
+      if (!finalReply.includes("Me chamo Lara")) {
+        finalReply = `${greetingPrefix}${finalReply}`;
+      }
+    }
+
     // Limpar sofrimento_relatado e contexto_offtopic após usá-los uma vez (para não repetir nos próximos turnos!)
 
     if (user_data.sofrimento_relatado) {
@@ -1304,15 +1334,6 @@ Gere a resposta da Lara (retorne APENAS o texto da mensagem a ser enviada ao cli
       return { state: 'AWAITING_AGE' };
     }
 
-    // 4. Tempo de Contribuição Total
-    if (userData.inss_tempo_carteira === undefined || userData.inss_tempo_carteira === null || String(userData.inss_tempo_carteira).trim() === '') {
-      if (userData.ja_contribuiu === false) {
-        userData.inss_tempo_carteira = 'nenhum';
-      } else {
-        return { state: 'AWAITING_TOTAL_CONTRIBUTION' };
-      }
-    }
-
     // Se nunca contribuiu (ja_contribuiu === false), pre-definimos os campos de contribuição e ativamos o fluxo BPC Idoso se tiver idade
     if (userData.ja_contribuiu === false) {
       userData.esta_contribuindo_atualmente = false;
@@ -1320,6 +1341,15 @@ Gere a resposta da Lara (retorne APENAS o texto da mensagem a ser enviada ao cli
       const ageNum = this.parseNumber(userData.idade);
       if (ageNum >= 65) {
         userData.fluxo_ativo = 'BPC_IDOSO';
+      }
+    }
+
+    // 4. Tempo de Contribuição Total
+    if (userData.inss_tempo_carteira === undefined || userData.inss_tempo_carteira === null || String(userData.inss_tempo_carteira).trim() === '') {
+      if (userData.ja_contribuiu === false) {
+        userData.inss_tempo_carteira = 'nenhum';
+      } else {
+        return { state: 'AWAITING_TOTAL_CONTRIBUTION' };
       }
     }
 
