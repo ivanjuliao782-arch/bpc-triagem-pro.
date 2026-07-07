@@ -948,44 +948,16 @@ export default function App() {
                         <button onClick={() => handleWhatsAppClick(lead)} className="py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-[10px] font-bold transition-all cursor-pointer">
                           Enviar Mensagem
                         </button>
-                        <button onClick={() => updateLeadStatus(lead.id, 'consulta_marcada', { agendamento: 'Amanhã às 14:00' })} className="py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-[10px] font-bold transition-all cursor-pointer">
-                          Marcar Consulta
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </KanbanColumn>
-
-                {/* COLUNA 4 — CONSULTA MARCADA */}
-                <KanbanColumn title="📅 4. CONSULTA MARCADA" count={leads.filter(l => l.status === 'consulta_marcada').length}>
-                  {leads.filter(l => l.status === 'consulta_marcada').map(lead => (
-                    <div 
-                      key={lead.id} 
-                      onClick={() => setSelectedLead(lead)}
-                      className="bg-[#12121A] border border-[#1C1C28] p-4 rounded-2xl hover:border-violet-500/30 transition-all hover:scale-[1.01] cursor-pointer space-y-3"
-                    >
-                      <h4 className="text-sm font-bold text-white">{lead.nome}</h4>
-                      
-                      <div className="p-3 bg-violet-500/5 rounded-xl border border-violet-500/10 space-y-2 text-[11px]">
-                        <div className="flex justify-between"><span className="text-gray-500 font-medium">Data/Horário:</span> <span className="text-highlight font-bold">{lead.agendamento || 'Amanhã às 14:00'}</span></div>
-                        <div className="flex justify-between"><span className="text-gray-500 font-medium">Especialista:</span> <span className="text-gray-300 font-semibold">Dra. Mônica Lucioli</span></div>
-                        <div className="flex justify-between"><span className="text-gray-500 font-medium">Status:</span> <span className="text-emerald-400 font-bold uppercase tracking-wider text-[9px]">Confirmada</span></div>
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-2" onClick={e => e.stopPropagation()}>
-                        <button onClick={() => updateLeadStatus(lead.id, 'fechados', { valorContrato: 4200, tipoBeneficio: 'Auxílio Doença' })} className="py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-[10px] font-bold transition-all cursor-pointer">
+                        <button onClick={() => updateLeadStatus(lead.id, 'fechados', { valorContrato: 4200, tipoBeneficio: 'BPC/LOAS' })} className="py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-[10px] font-bold transition-all cursor-pointer">
                           Confirmar Fecho
                         </button>
-                        <button onClick={() => updateLeadStatus(lead.id, 'perdidos', { motivoPerda: 'Faltou na consulta' })} className="py-2 bg-red-600/20 hover:bg-red-600/30 text-red-400 border border-red-500/10 rounded-xl text-[10px] font-bold transition-all cursor-pointer">
-                          Cancelar
-                        </button>
                       </div>
                     </div>
                   ))}
                 </KanbanColumn>
 
-                {/* COLUNA 5 — FECHADOS */}
-                <KanbanColumn title="🏆 5. FECHADOS (CONVERSÃO)" count={leads.filter(l => l.status === 'fechados').length}>
+                {/* COLUNA 4 — FECHADOS */}
+                <KanbanColumn title="🏆 4. FECHADOS (CONVERSÃO)" count={leads.filter(l => l.status === 'fechados').length}>
                   {leads.filter(l => l.status === 'fechados').map(lead => (
                     <div 
                       key={lead.id} 
@@ -1007,8 +979,8 @@ export default function App() {
                   ))}
                 </KanbanColumn>
 
-                {/* COLUNA 6 — PERDIDOS */}
-                <KanbanColumn title="❌ 6. PERDIDOS" count={leads.filter(l => l.status === 'perdidos').length}>
+                {/* COLUNA 5 — PERDIDOS */}
+                <KanbanColumn title="❌ 5. PERDIDOS" count={leads.filter(l => l.status === 'perdidos').length}>
                   {leads.filter(l => l.status === 'perdidos').map(lead => (
                     <div 
                       key={lead.id} 
@@ -1029,8 +1001,8 @@ export default function App() {
                   ))}
                 </KanbanColumn>
 
-                {/* COLUNA 7 — JÁ TEM ADVOGADO */}
-                <KanbanColumn title="🚫 7. JÁ TEM ADVOGADO" count={leads.filter(l => l.status === 'com_advogado').length}>
+                {/* COLUNA 6 — JÁ TEM ADVOGADO */}
+                <KanbanColumn title="🚫 6. JÁ TEM ADVOGADO" count={leads.filter(l => l.status === 'com_advogado').length}>
                   {leads.filter(l => l.status === 'com_advogado').map(lead => (
                     <div
                       key={lead.id}
@@ -1339,10 +1311,10 @@ export default function App() {
                         <MessageCircle size={14} /> Chamar no WhatsApp
                       </button>
                       <button 
-                        onClick={() => updateLeadStatus(lead.id, 'consulta_marcada', { agendamento: 'Hoje às 16:30' })}
+                        onClick={() => updateLeadStatus(lead.id, 'fechados', { valorContrato: 4200, tipoBeneficio: 'BPC/LOAS' })}
                         className="flex-1 md:flex-none px-4 py-2 bg-violet-600 hover:bg-violet-500 text-white rounded-lg text-xs font-bold transition-all cursor-pointer"
                       >
-                        Marcar Consulta
+                        Confirmar Fechamento
                       </button>
                     </div>
                   </div>
