@@ -61,7 +61,7 @@ const STATE_QUESTIONS: Record<string, string[]> = {
     "Já trabalhou em serviço público, exército ou escola técnica antes de 1998?"
   ],
   FINISHED: [
-    "Com base nas informações nossa equipe pode te ajudar. Em 1 minuto um profissional entrará em contato com você."
+    "Nossa equipe irá avaliar sua situação e assim que possível entraremos em contato novamente"
   ]
 };
 
@@ -386,6 +386,121 @@ JSON de retorno:`;
     }
   }
 
+  interpretador_codigo(text: string, currentState?: string): any {
+    const clean = text.toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^\w\s]/g, "")
+      .trim();
+
+    const data: any = {};
+
+    // 1. Advogado (AWAITING_LAWYER)
+    if (currentState === 'AWAITING_LAWYER') {
+      if (/\b(nao|ainda nao|tenho nao|nao tenho|nenhum|nunca)\b/.test(clean)) {
+        data.has_lawyer = false;
+      } else if (/\b(sim|tenho|ja tenho|ja sim)\b/.test(clean)) {
+        data.has_lawyer = true;
+      }
+    }
+
+    // 2. Idade (AWAITING_AGE)
+    if (currentState === 'AWAITING_AGE' || clean.includes("anos") || /\b\d{2}\b/.test(clean)) {
+      const match = clean.match(/\b\d{2}\b/);
+      if (match) {
+        data.idade = parseInt(match[0], 10);
+      } else {
+        if (clean.includes("sessenta e cinco")) data.idade = 65;
+        else if (clean.includes("sessenta e seis")) data.idade = 66;
+        else if (clean.includes("sessenta e sete")) data.idade = 67;
+        else if (clean.includes("sessenta e oito")) data.idade = 68;
+        else if (clean.includes("sessenta e nove")) data.idade = 69;
+        else if (clean.includes("setenta")) {
+          if (clean.includes("dois")) data.idade = 72;
+          else if (clean.includes("um")) data.idade = 71;
+          else if (clean.includes("tres")) data.idade = 73;
+          else if (clean.includes("quatro")) data.idade = 74;
+          else if (clean.includes("cinco")) data.idade = 75;
+          else data.idade = 70;
+        }
+      }
+    }
+
+    // 3. Renda (BPC_AWAITING_HOUSEHOLD_INCOME)
+    if (currentState === 'BPC_AWAITING_HOUSEHOLD_INCOME') {
+      if (
+        /\b(nao|nada|nenhuma|nenhum|nunca|sem renda|quem me dera|nao recebo|recebo nao|infelizmente nao)\b/.test(clean) ||
+        clean.includes("quem me dera") ||
+        clean.includes("nao tenho renda") ||
+        clean.includes("nao ganho nada")
+      ) {
+        data.bpc_renda_familiar = false;
+        data.bpc_quem_renda = 'nenhuma';
+      } else if (/\b(sim|recebo|ganho|bolsa|pensao|aposentadoria|bpc|loas|ajuda|salario)\b/.test(clean)) {
+        data.bpc_renda_familiar = true;
+      }
+    }
+
+    // 4. Moradia (BPC_AWAITING_HOME_STATUS)
+    if (currentState === 'BPC_AWAITING_HOME_STATUS') {
+      if (clean.includes("alugada") || clean.includes("aluguel")) {
+        data.bpc_casa_alugada_propria = 'alugada';
+      } else if (clean.includes("propria") || clean.includes("minha")) {
+        data.bpc_casa_alugada_propria = 'propria';
+      } else if (clean.includes("cedida") || clean.includes("emprestada") || clean.includes("de favor")) {
+        data.bpc_casa_alugada_propria = 'cedida';
+      }
+    }
+
+    // 5. CadÚnico (BPC_AWAITING_CADUNICO)
+    if (currentState === 'BPC_AWAITING_CADUNICO') {
+      if (/\b(nao|nao tenho|tenho nao|nunca fiz|sem cadastro)\b/.test(clean)) {
+        data.bpc_cad_unico = false;
+        data.bpc_cadunico = false;
+      } else if (/\b(sim|tenho|ja fiz|cadastrada|cadastrado)\b/.test(clean)) {
+        data.bpc_cad_unico = true;
+        data.bpc_cadunico = true;
+      }
+    }
+
+    // 6. Nome (AWAITING_NAME)
+    if (currentState === 'AWAITING_NAME') {
+      if (this.isValidName(text)) {
+        data.nome_usuario = text.trim();
+      }
+    }
+
+    return data;
+  }
+
+  async runHybridExtraction(text: string, currentState?: string): Promise<any> {
+    const codeResult = this.interpretador_codigo(text, currentState);
+
+    let needsFallback = false;
+    if (currentState === 'AWAITING_NAME' && !codeResult.nome_usuario) needsFallback = true;
+    if (currentState === 'AWAITING_LAWYER' && codeResult.has_lawyer === undefined) needsFallback = true;
+    if (currentState === 'AWAITING_AGE' && !codeResult.idade) needsFallback = true;
+    if (currentState === 'BPC_AWAITING_HOUSEHOLD_INCOME' && codeResult.bpc_renda_familiar === undefined) needsFallback = true;
+    if (currentState === 'BPC_AWAITING_HOME_STATUS' && !codeResult.bpc_casa_alugada_propria) needsFallback = true;
+    if (currentState === 'BPC_AWAITING_CADUNICO' && codeResult.bpc_cad_unico === undefined) needsFallback = true;
+
+    if (currentState === undefined || currentState === 'AWAITING_NAME') {
+      needsFallback = true;
+    }
+
+    if (!needsFallback) {
+      console.log("⚡ Extração por Código resolvida com sucesso (sem fallback de IA).");
+      return this.sanitizeExtractedData(codeResult, text, currentState);
+    }
+
+    console.log("🤖 Extração por Código incompleta. Executando fallback silencioso de IA...");
+    const iaResult = await this.runExtraction(text, currentState);
+
+    const merged = { ...iaResult, ...codeResult };
+    return this.sanitizeExtractedData(merged, text, currentState);
+  }
+
+
   async processMessage(phone: string, input: string | Buffer) {
     const isAudio = typeof input !== 'string';
     let text: string | null = null;
@@ -425,8 +540,8 @@ JSON de retorno:`;
       if (isAudio) {
         console.log(`[INSTRUMENTAÇÃO ÁUDIO] [${timestamp}] [Lead: ${phone}] 4. Resultado enviado ao extractor: "${text}"`);
       }
-      extractedData = await this.runExtraction(text, currentState);
-      console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 4. Dados extraídos: ${JSON.stringify(extractedData)}`);
+      extractedData = await this.runHybridExtraction(text, currentState);
+      console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 4. Dados extraídos (híbrido): ${JSON.stringify(extractedData)}`);
       if (isAudio) {
         console.log(`[INSTRUMENTAÇÃO ÁUDIO] [${timestamp}] [Lead: ${phone}] 5. Campos extraídos do áudio: ${JSON.stringify(extractedData)}`);
       }
@@ -469,7 +584,7 @@ JSON de retorno:`;
 
     // GUARDA GLOBAL: Se a sessão já está no estado FINISHED, não processa nada - retorna mensagem de encerramento
     if (session && session.user_data?.state_fsm === 'FINISHED' && session.user_data?.status_final !== 'com_advogado') {
-      const respostaFinal = `Com base nas informações nossa equipe pode te ajudar. Em 1 minuto um profissional entrará em contato com você.`;
+      const respostaFinal = `Nossa equipe irá avaliar sua situação e assim que possível entraremos em contato novamente`;
       console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] GUARDA GLOBAL FINISHED: sessão já encerrada. Retornando mensagem de handoff.`);
       console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 9. Resposta final enviada ao cliente: "${respostaFinal}"`);
       return respostaFinal;
@@ -649,7 +764,7 @@ JSON de retorno:`;
 
     // GUARDA DETERMINÍSTICO 0: Se o estado calculado for FINISHED, encerra deterministamente sem chamar a IA
     if (stateFsm === 'FINISHED') {
-      const finalReply = "Com base nas informações nossa equipe pode te ajudar. Em 1 minuto um profissional entrará em contato com você.";
+      const finalReply = "Nossa equipe irá avaliar sua situação e assim que possível entraremos em contato novamente";
       const newHistory = [...history, { role: 'user', content: text }, { role: 'assistant', content: finalReply }];
       
       const updates = {
@@ -735,9 +850,10 @@ JSON de retorno:`;
     const alreadyCorrected = history.some((h: any) => h.role === 'assistant' && h.content.includes("Pode me chamar de Lara."));
     const clientCalledWrongName = calledWrongName && !alreadyCorrected;
 
-    let metaPerguntas = "";
+    // Pega a pergunta crua correspondente ao estado atual
+    let dryQuestion = "";
     if (resolved.fluxo_ativo === 'EXCECAO') {
-      metaPerguntas = EXCECAO_QUESTIONS.map(q => `- ${q}`).join("\n");
+      dryQuestion = EXCECAO_QUESTIONS[Math.floor(Math.random() * EXCECAO_QUESTIONS.length)];
     } else {
       let questionsList = STATE_QUESTIONS[stateFsm];
       if (stateFsm === 'BPC_AWAITING_HOUSEHOLD_INCOME') {
@@ -755,13 +871,28 @@ JSON de retorno:`;
           questionsList = ["Você recebe algum dinheiro? Bolsa família, pensão, aposentadoria ou alguma outra renda?"];
         }
       }
-      metaPerguntas = questionsList ? questionsList.map(q => `- ${q}`).join("\n") : "";
+      dryQuestion = questionsList ? questionsList[Math.floor(Math.random() * questionsList.length)] : "";
+    }
+
+    let contextStr = "Tom seco, direto e curto nas etapas cadastrais, mas acolhedor no desabafo/luto.";
+    if (stateFsm === 'AWAITING_NAME') {
+      contextStr = "Contexto: Início de contato, pergunte o nome de forma simples.";
+    } else if (stateFsm === 'AWAITING_LAWYER') {
+      contextStr = "Contexto: Cliente com possível BPC ou benefício, investigando se já tem advogado, tom ético e direto.";
+    } else if (stateFsm === 'AWAITING_AGE') {
+      contextStr = "Contexto: Perguntando a idade de forma super direta.";
+    } else if (stateFsm === 'BPC_AWAITING_HOUSEHOLD_INCOME') {
+      contextStr = "Contexto: Cliente idoso ou deficiente de baixa renda, perguntando se recebe algum dinheiro (bolsa família, aposentadoria, pensão) de forma acolhedora, sem romantizar, sem enrolar.";
+    } else if (stateFsm === 'BPC_AWAITING_HOME_STATUS') {
+      contextStr = "Contexto: Perguntando a situação da moradia (casa própria, alugada ou cedida) de forma simples.";
+    } else if (stateFsm === 'BPC_AWAITING_CADUNICO') {
+      contextStr = "Contexto: Perguntando se tem Cadastro Único (CadÚnico).";
     }
 
     const confirmParts: string[] = [];
     let nameVal = user_data.nome_usuario || "";
 
-    // Lógica profissional baseada em histórico de conversas (sem remendos no banco):
+    // Lógica profissional baseada em histórico de conversas:
     // Só confirmamos os dados se eles foram fornecidos espontaneamente (upfront) antes de a Lara perguntar por eles.
     const hasAskedAge = history.some((h: any) => h.role === 'assistant' && (h.content.toLowerCase().includes('idade') || h.content.toLowerCase().includes('quantos anos')));
     const hasAskedContrib = history.some((h: any) => h.role === 'assistant' && (h.content.toLowerCase().includes('contribuiu') || h.content.toLowerCase().includes('tempo de contribuição') || h.content.toLowerCase().includes('tempo você já contribuiu') || h.content.toLowerCase().includes('tempo de carteira')));
@@ -824,7 +955,7 @@ JSON de retorno:`;
       confirmParts.push("tem deficiência");
     }
 
-    let confirmPrompt = "";
+    let confirmPrefixToPrepend = "";
     if (confirmParts.length > 0) {
       const nameStr = nameVal ? `, ${nameVal},` : "";
       const variations = ['Certo', 'Ok', 'Anotado'];
@@ -839,12 +970,7 @@ JSON de retorno:`;
         confirmStr = confirmParts.slice(0, -1).join(", ") + " e " + confirmParts[confirmParts.length - 1];
       }
 
-      const confirmExemplo = `${prefixWord}${nameStr} você ${confirmStr}.`;
-      confirmPrompt = `\n⚠️ DIRETRIZ CRÍTICA DE CONFIRMAÇÃO DE DADOS:
-O cliente forneceu novas informações que ainda não foram confirmadas verbalmente por você.
-Você DEVE OBRIGATORIAMENTE iniciar a sua resposta exatamente com o prefixo de confirmação: "${confirmExemplo}".
-Esta diretriz é absoluta e ignora qualquer outra regra (como a Regra 7 de não repetir o nome do cliente). Você deve incluir o nome do cliente exatamente como consta no prefixo de exemplo.
-Faça isso no início do seu balão de fala, antes de fazer a próxima pergunta sugerida pela FSM.\n`;
+      confirmPrefixToPrepend = `${prefixWord}${nameStr} você ${confirmStr}. `;
     }
 
     const promptSofia = `Você é Lara, atendente humana do escritório de advocacia previdenciária da Dra. Mônica Lucioli.
@@ -859,66 +985,25 @@ DIRETRIZES DE COMUNICAÇÃO E REGRAS DE NEGÓCIO (OBRIGATÓRIO):
    Se o cliente relatar falecimento/luto (como viúvas/viúvos) ou desabafar sobre sofrimento e dores graves de saúde, você DEVE sim expressar sentimentos sinceros e acolhimento humano no início da mensagem antes de fazer a pergunta (ex: "Poxa, meus sentimentos pela perda do seu marido", "Nossa, sinto muito por você estar passando por essa dor"). 
    ATENÇÃO: Não use frases artificiais de robô terapeuta ou corporativo (como "Compreendo perfeitamente, a dor na coluna exige cuidados..."). Fale como uma pessoa de verdade e calorosa do escritório. 
    Nas fases seguintes da conversa, quando o cliente estiver apenas respondendo a dados de triagem cadastral, seja 100% direta e prática, sem repetir sentimentos.
-6. RESPOSTA A RESPOSTAS INVÁLIDAS OU MENSAGENS INCOMUNS: Se o cliente enviar brincadeiras, zoeiras ou comentários incomuns (como sobre a voz do bot, assuntos paralelos ou política), ignore a brincadeira, não reaja com humor (proibido usar "kkkk", "rsrs" ou gírias como "Eita") e direcione o cliente de forma profissional para a triagem (ex: "Para eu entender melhor o seu caso e ver como podemos te ajudar por aqui, me fale seu nome por favor.").
-7. NUNCA REPETIR O NOME DO CLIENTE: Não repita o nome do cliente nas mensagens da triagem (ex: não comece com "Sandra,..." ou "João,..."). Fale diretamente. EXCEÇÃO CRÍTICA: Se houver uma diretriz de confirmação de dados no início do prompt, você deve incluir o nome do cliente exatamente como indicado no prefixo de confirmação de exemplo.
+6. RESPOSTA A RESPOSTAS INVÁLIDAS OU MENSAGENS INCOMUNS: Se o cliente enviar brincadeiras, zoeiras ou comentários incomuns (como sobre a voz do bot, assuntos paralelos ou política), ignore a brincadeira, não reaja com humor (proibido usar "kkkk", "rsrs" ou gírias como "Eita") e direcione o cliente de forma profissional para a triagem.
+7. NUNCA REPETIR O NOME DO CLIENTE: Não repita o nome do cliente nas mensagens da triagem.
 8. NÃO SEJA INSISTENTE COM O NOME: Se você já perguntou o nome do cliente e ele não informou na mensagem seguinte, NÃO repita a pergunta do nome. Avance para a triagem diretamente.
-9. EVITAR REPETIÇÕES DE PERGUNTAS (CRÍTICO): Se a última mensagem enviada por você já era a pergunta da etapa atual da FSM (ex: "Você já tem advogado atuando em seu caso?") e o usuário mandou uma mensagem contendo outros dados (como "35 de contribuição") sem responder a essa pergunta:
-   - Apenas confirme a nova informação de forma simples e direta (ex: "Certo, 35 de contribuição.").
-   - NÃO faça a pergunta pendente de novo no mesmo balão de fala se você acabou de fazê-la na mensagem anterior do histórico. Aguarde o usuário responder à pergunta anterior. Isso evita loops repetitivos inconvenientes caso mensagens cheguem fora de ordem.
-10. CORREÇÃO DE NOME: ${clientCalledWrongName ? 'Se o cliente te chamou por outro nome (como doutora, senhora, moça, assistente, etc.), comece a mensagem dizendo EXATAMENTE: "Pode me chamar de Lara." e em seguida continue o fluxo normalmente.' : 'NÃO se aplica (o cliente não chamou por outro nome, ou você já corrigiu antes com "Pode me chamar de Lara.").'}
-11. PROIBIDO CONTRA-POR TRABALHO E BENEFÍCIO: Nunca confronte o cliente sobre ele estar trabalhando vs recebendo benefício. Se precisar saber se trabalha atualmente, pergunte apenas: "Como está sua rotina de trabalho hoje em dia, você está conseguindo trabalhar?" ou "Atualmente, você consegue exercer alguma atividade ou está parado por conta da saúde?".
-12. MULTIPLAS PERGUNTAS CURTAS: Se a triagem exigir mais de uma informação que faça sentido perguntar junto (como no caso de saúde/trabalho), você pode fazer as duas perguntas de forma super curta (ex: "Você está se sentindo apta a volta ao trabalho? Tem alguma outra doença?").
-13. PROIBIDO ABSOLUTO - PEDIDO DE DOCUMENTOS: É TERMINANTEMENTE PROIBIDO pedir ao cliente que envie, tire foto, mande arquivo, encaminhe ou mostre qualquer documento (laudo, receita, exame, carteira de trabalho, etc.). Você NÃO analisa documentos. Você NÃO é especialista jurídica. Você NÃO é médica. Você NÃO é perícia. Você NUNCA diz "me envia", "me manda", "para eu analisar", "preciso ver", "envie os exames", "manda foto". Sua função é APENAS coletar sinais e qualificar. Após confirmar se o cliente possui ou não documentos, ENCERRE a conversa imediatamente com a mensagem de encerramento padrão.
-14. ESCOPO ABSOLUTO DA LARA: Você é uma QUALIFICADORA. Seu único papel é: (1) COLETAR sinais básicos do caso, (2) IDENTIFICAR potencial do caso, (3) ENCAMINHAR para a equipe. Você NÃO resolve, NÃO analisa, NÃO investiga, NÃO dá continuidade aberta além dos passos da triagem. Ao atingir o estado FINISHED, encerre IMEDIATAMENTE com a mensagem de encerramento padrão.
-15. DESVIOS DE ASSUNTO E OFF-TOPIC: Caso o usuário mude de assunto, faça reclamações sobre o governo ou INSS, faça perguntas pessoais (como "qual seu nome?", "quem é você?") ou diga coisas fora da triagem, dê uma resposta extremamente curta de empatia ou esclarecimento (1 única frase curta, variando os termos para nunca parecer repetitiva, ex: "Entendo a sua preocupação", "Te compreendo", "Imagino como deve ser", "Eu sou a atendente da Dra. Mônica", etc.) e em seguida retorne IMEDIATAMENTE para a pergunta correspondente ao próximo passo da triagem: ${metaPerguntas}. É proibido prolongar conversas fora do assunto ou sair do fluxo de qualificação.
-16. RIGIDEZ NO SEGUIMENTO DA FSM: Você deve obrigatoriamente guiar a conversa pela etapa indicada em "META DA TRIAGEM ATUAL (ETAPA SUGERIDA)". É terminantemente proibido pular etapas ou fazer perguntas de etapas que ainda não foram sugeridas pela FSM (por exemplo: nunca pergunte sobre laudos, documentos ou histórico de contribuição se a FSM indicar que a etapa atual é AWAITING_CURRENT_CONTRIBUTION). Se o cliente trará informações de outras etapas antecipadamente, acate-as com naturalidade de forma curta, mas faça a pergunta da etapa pendente sugerida pela FSM.
-17. VARIAÇÃO NAS CONFIRMAÇÕES (NOVO): Ao confirmar dados ou respostas curtas do lead, varie as expressões usadas no início da frase. Use opções como "Anotado", "Certo", "Entendo", "Ok", "Perfeito" de forma natural e alternada. Nunca comece frases seguidas usando a mesma palavra de confirmação (por exemplo: evite usar "Entendido" ou "Certo" mais de uma vez seguida nas respostas).
-18. PROIBIDO AJUDA DE AMIGOS/FAMÍLIA: É terminantemente proibido perguntar se o cliente recebe ajuda financeira, doações, cesta básica, pensão informal ou qualquer tipo de ajuda de parentes, amigos, vizinhos ou familiares. Essa pergunta NÃO faz parte do fluxo do BPC.
+9. PROIBIDO CONTRA-POR TRABALHO E BENEFÍCIO: Nunca confronte o cliente sobre ele estar trabalhando vs recebendo benefício. Se precisar saber se trabalha atualmente, pergunte apenas: "Como está sua rotina de trabalho hoje em dia, você está conseguindo trabalhar?".
+10. PROIBIDO AJUDA DE AMIGOS/FAMÍLIA: É terminantemente proibido perguntar se o cliente recebe ajuda financeira, doações, cesta básica, pensão informal ou qualquer tipo de ajuda de parentes, amigos, vizinhos ou familiares. Essa pergunta NÃO faz parte do fluxo do BPC.
+11. DESVIOS DE ASSUNTO E OFF-TOPIC: Caso o usuário mude de assunto, faça reclamações sobre o governo ou INSS, faça perguntas pessoais (como "qual seu nome?", "quem é você?") ou diga coisas fora da triagem, dê uma resposta extremamente curta de empatia ou esclarecimento (1 única frase curta, variando os termos para nunca parecer repetitiva, ex: "Entendo a sua preocupação", "Te compreendo", etc.) e em seguida retorne para a pergunta base abaixo.
 
-EXEMPLOS DE RESPOSTAS DA LARA (SIGA EXATAMENTE ESTE ESTILO PUNCHY, SECO E DIRETO NAS ETAPAS CADASTRAIS, MAS ACOLHEDOR NO DESABAFO/LUTO):
+DIRETRIZ CRÍTICA DE HUMANIZAÇÃO COM CONTEXTO:
+Sua tarefa é reescrever a pergunta base indicada abaixo de forma humana, natural, acolhedora e direta, seguindo a diretriz de contexto.
+Não invente informações que não estão na pergunta base.
+Não mude o sentido da pergunta base.
+Não faça nenhuma outra pergunta.
+Máximo 2 frases.
 
-Exemplo 1 (Abertura após identificação de nome):
-Lara: "Para iniciar o seu atendimento por favor me informe sua idade e quanto tempo de contribuição você tem para o INSS"
+Pergunta Base para reescrever:
+"${dryQuestion}"
 
-Exemplo 2 (Cliente relata dor grave de saúde no início - Mostrar sentimento sincero e perguntar):
-Cliente: "Estou desesperada pq ando com muita dor na coluna e não consigo mais trabalhar de jeito nenhum"
-Lara: "Nossa, sinto muito por você estar passando por essa dor. Para eu ver como podemos te ajudar, você lembra se já trabalhou com carteira assinada?"
-
-Exemplo 3 (Cliente relata luto/viúva - Mostrar sentimentos reais):
-Cliente: "Meu esposo faleceu na cadeia, ele morreu de coração grande"
-Lara: "Poxa, meus sentimentos pela perda do seu marido. Você já tem advogado mexendo pra você?"
-
-Exemplo 4 (Cliente relata tornozelo rompido na fase seguinte - Direto e sem enrolação):
-Cliente: "Tive ligamento tornozelo rompido , não consegui nem a consulta com ortopedista SUS"
-Lara: "Você está se sentindo apta a volta ao trabalho? Tem alguma outra doença?"
-
-Exemplo 5 (Perguntar data e tempo de afastamento de forma super direta):
-Cliente: "Fiquei quase 2 anos afastada"
-Lara: "Foi em que ano?"
-
-Exemplo 6 (Perguntar idade de forma direta):
-Lara: "Você está com quantos anos?"
-
-Exemplo 7 (Marcar horário rápido):
-Lara: "Vou marcar um horário pra conversar melhor com você. Quarta agendo."
-
-Exemplo 8 (ESTADO FINISHED - encerramento correto):
-Cliente: "Tenho sim" (confirmando laudos)
-Lara: "Perfeito. Vou encaminhar suas informações para a equipe. Em breve entrarão em contato com você."
-
-Exemplo 9 (ESTADO FINISHED - encerramento correto quando cliente confirma documentos e estava investigando):
-Cliente: "Como assim?" (pedindo mais detalhes após encerramento)
-Lara: "Com base nas informações nossa equipe pode te ajudar. Em 1 minuto um profissional entrará em contato com você."
-
-DADOS JÁ COLETADOS SOBRE O CLIENTE (NÃO PERGUNTE SOBRE ELES SE JÁ ESTÃO AQUI):
-${knownData.length > 0 ? knownData.join("\n") : "- Nenhum dado coletado ainda."}
-
-META DA TRIAGEM ATUAL (ETAPA SUGERIDA):
-A FSM sugere que estamos na etapa "${stateFsm}" (Fluxo ativo: "${user_data.fluxo_ativo || 'Não definido'}").
-Exemplos de perguntas recomendadas para esta etapa:
-${metaPerguntas}
-${user_data.contexto_offtopic ? `\n⚠️ AVISO IMPORTANTE: O usuário acabou de desviar do assunto ou fazer um comentário off-topic/reclamação. Siga a Regra 15 rigorosamente: dê uma resposta empática muito curta (1 frase, mude os termos para não repetir "entendo") e traga-o de volta à pergunta da triagem: ${metaPerguntas}.\n` : ''}
-${confirmPrompt}
+Diretriz de Contexto:
+"${contextStr}"
 
 Histórico da conversa:
 ${JSON.stringify(history.map((h: any) => ({ role: h.role, content: h.content })))}
@@ -926,14 +1011,18 @@ ${JSON.stringify(history.map((h: any) => ({ role: h.role, content: h.content }))
 Última mensagem do cliente:
 "${text}"
 
-Gere a resposta da Lara (retorne APENAS o texto da mensagem a ser enviada ao cliente, de preferência 1 ou 2 linhas curtas):`;
+Gere a resposta da Lara (retorne APENAS o texto reescrito da pergunta base, sem mais nada):`;
 
     console.log(`🧠 Chamando inteligência artificial (Lara Conversacional) para gerar resposta...`);
     let finalReply = await this.generateTextWithFallback(promptSofia);
     if (!finalReply || finalReply.trim() === '') {
-      finalReply = "Certo. Me conta mais sobre isso pra eu poder te ajudar.";
+      finalReply = dryQuestion;
     }
     finalReply = finalReply.trim();
+
+    if (confirmPrefixToPrepend && !finalReply.includes(confirmPrefixToPrepend.trim())) {
+      finalReply = `${confirmPrefixToPrepend}${finalReply}`;
+    }
 
     // Guard de Segurança Contra Interrogação Fiscal (Evitar bloqueios)
     const hasForbiddenFiscalInterrogation = (reply: string): boolean => {
@@ -1443,7 +1532,9 @@ Gere a resposta da Lara (retorne APENAS o texto da mensagem a ser enviada ao cli
       if (userData.bpc_pessoas_casa === undefined || userData.bpc_pessoas_casa === null || String(userData.bpc_pessoas_casa).trim() === '') {
         return { state: 'BPC_AWAITING_HOUSEHOLD', fluxo_ativo };
       }
-      if (userData.bpc_quem_renda === undefined || userData.bpc_quem_renda === null || String(userData.bpc_quem_renda).trim() === '') {
+      const hasIncomeInfo = (userData.bpc_renda_familiar !== undefined && userData.bpc_renda_familiar !== null) ||
+                            (userData.bpc_quem_renda !== undefined && userData.bpc_quem_renda !== null && String(userData.bpc_quem_renda).trim() !== '');
+      if (!hasIncomeInfo) {
         return { state: 'BPC_AWAITING_HOUSEHOLD_INCOME', fluxo_ativo };
       }
       if (userData.bpc_casa_alugada_propria === undefined || userData.bpc_casa_alugada_propria === null || String(userData.bpc_casa_alugada_propria).trim() === '') {
@@ -1481,7 +1572,9 @@ Gere a resposta da Lara (retorne APENAS o texto da mensagem a ser enviada ao cli
       if (userData.bpc_pessoas_casa === undefined || userData.bpc_pessoas_casa === null || String(userData.bpc_pessoas_casa).trim() === '') {
         return { state: 'BPC_AWAITING_HOUSEHOLD', fluxo_ativo };
       }
-      if (userData.bpc_quem_renda === undefined || userData.bpc_quem_renda === null || String(userData.bpc_quem_renda).trim() === '') {
+      const hasIncomeInfo = (userData.bpc_renda_familiar !== undefined && userData.bpc_renda_familiar !== null) ||
+                            (userData.bpc_quem_renda !== undefined && userData.bpc_quem_renda !== null && String(userData.bpc_quem_renda).trim() !== '');
+      if (!hasIncomeInfo) {
         return { state: 'BPC_AWAITING_HOUSEHOLD_INCOME', fluxo_ativo };
       }
       if (userData.bpc_casa_alugada_propria === undefined || userData.bpc_casa_alugada_propria === null || String(userData.bpc_casa_alugada_propria).trim() === '') {
