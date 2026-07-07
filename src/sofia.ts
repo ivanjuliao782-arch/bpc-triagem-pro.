@@ -724,6 +724,9 @@ JSON de retorno:`;
       }
     }
 
+    const hasSentMessagesBefore = history.length > 2;
+    const hasSaidLara = hasSentMessagesBefore && history.some((h: any) => h.role === 'assistant' && /\blara\b/i.test(h.content));
+
     const nonLaraNames = ["doutora", "dra", "senhora", "moça", "moca", "assistente", "atendente", "robô", "robo"];
     const calledWrongName = nonLaraNames.some(name => {
       if (name === 'dra') {
@@ -731,8 +734,8 @@ JSON de retorno:`;
       }
       return text.toLowerCase().includes(name);
     });
-    const alreadyCorrected = history.some((h: any) => h.role === 'assistant' && h.content.includes("Pode me chamar de Lara."));
-    const clientCalledWrongName = calledWrongName && !alreadyCorrected;
+    // Só faz a correção se ela NUNCA falou o nome dela na sessão antes
+    const clientCalledWrongName = calledWrongName && !hasSaidLara;
 
     let metaPerguntas = "";
     if (resolved.fluxo_ativo === 'EXCECAO') {
@@ -869,9 +872,10 @@ DIRETRIZES DE COMUNICAÇÃO E REGRAS DE NEGÓCIO (OBRIGATÓRIO):
 12. MULTIPLAS PERGUNTAS CURTAS: Se a triagem exigir mais de uma informação que faça sentido perguntar junto (como no caso de saúde/trabalho), você pode fazer as duas perguntas de forma super curta (ex: "Você está se sentindo apta a volta ao trabalho? Tem alguma outra doença?").
 13. PROIBIDO ABSOLUTO - PEDIDO DE DOCUMENTOS: É TERMINANTEMENTE PROIBIDO pedir ao cliente que envie, tire foto, mande arquivo, encaminhe ou mostre qualquer documento (laudo, receita, exame, carteira de trabalho, etc.). Você NÃO analisa documentos. Você NÃO é especialista jurídica. Você NÃO é médica. Você NÃO é perícia. Você NUNCA diz "me envia", "me manda", "para eu analisar", "preciso ver", "envie os exames", "manda foto". Sua função é APENAS coletar sinais e qualificar. Após confirmar se o cliente possui ou não documentos, ENCERRE a conversa imediatamente com a mensagem de encerramento padrão.
 14. ESCOPO ABSOLUTO DA LARA: Você é uma QUALIFICADORA. Seu único papel é: (1) COLETAR sinais básicos do caso, (2) IDENTIFICAR potencial do caso, (3) ENCAMINHAR para a equipe. Você NÃO resolve, NÃO analisa, NÃO investiga, NÃO dá continuidade aberta além dos passos da triagem. Ao atingir o estado FINISHED, encerre IMEDIATAMENTE com a mensagem de encerramento padrão.
-15. DESVIOS DE ASSUNTO E OFF-TOPIC: Caso o usuário mude de assunto, faça reclamações sobre o governo ou INSS, faça perguntas pessoais (como "qual seu nome?", "quem é você?") ou diga coisas fora da triagem, dê uma resposta extremamente curta de empatia ou esclarecimento (1 única frase curta, variando os termos para nunca parecer repetitiva, ex: "Entendo a sua preocupação", "Te compreendo", "Imagino como deve ser", "Eu sou a Lara, atendente da Dra. Mônica", etc.) e em seguida retorne IMEDIATAMENTE para a pergunta correspondente ao próximo passo da triagem: ${metaPerguntas}. É proibido prolongar conversas fora do assunto ou sair do fluxo de qualificação.
-16. RIGIDEZ NO SEGUIMENTO DA FSM: Você deve obrigatoriamente guiar a conversa pela etapa indicada em "META DA TRIAGEM ATUAL (ETAPA SUGERIDA)". É terminantemente proibido pular etapas ou fazer perguntas de etapas que ainda não foram sugeridas pela FSM (por exemplo: nunca pergunte sobre laudos, documentos ou histórico de contribuição se a FSM indicar que a etapa atual é AWAITING_CURRENT_CONTRIBUTION). Se o cliente trouxer informações de outras etapas antecipadamente, acate-as com naturalidade de forma curta, mas faça a pergunta da etapa pendente sugerida pela FSM.
+15. DESVIOS DE ASSUNTO E OFF-TOPIC: Caso o usuário mude de assunto, faça reclamações sobre o governo ou INSS, faça perguntas pessoais (como "qual seu nome?", "quem é você?") ou diga coisas fora da triagem, dê uma resposta extremamente curta de empatia ou esclarecimento (1 única frase curta, variando os termos para nunca parecer repetitiva, ex: "Entendo a sua preocupação", "Te compreendo", "Imagino como deve ser", "Eu sou a atendente da Dra. Mônica", etc.) e em seguida retorne IMEDIATAMENTE para a pergunta correspondente ao próximo passo da triagem: ${metaPerguntas}. É proibido prolongar conversas fora do assunto ou sair do fluxo de qualificação.
+16. RIGIDEZ NO SEGUIMENTO DA FSM: Você deve obrigatoriamente guiar a conversa pela etapa indicada em "META DA TRIAGEM ATUAL (ETAPA SUGERIDA)". É terminantemente proibido pular etapas ou fazer perguntas de etapas que ainda não foram sugeridas pela FSM (por exemplo: nunca pergunte sobre laudos, documentos ou histórico de contribuição se a FSM indicar que a etapa atual é AWAITING_CURRENT_CONTRIBUTION). Se o cliente trará informações de outras etapas antecipadamente, acate-as com naturalidade de forma curta, mas faça a pergunta da etapa pendente sugerida pela FSM.
 17. VARIAÇÃO NAS CONFIRMAÇÕES (NOVO): Ao confirmar dados ou respostas curtas do lead, varie as expressões usadas no início da frase. Use opções como "Anotado", "Certo", "Entendo", "Ok", "Perfeito" de forma natural e alternada. Nunca comece frases seguidas usando a mesma palavra de confirmação (por exemplo: evite usar "Entendido" ou "Certo" mais de uma vez seguida nas respostas).
+18. PROIBIDO AJUDA DE AMIGOS/FAMÍLIA: É terminantemente proibido perguntar se o cliente recebe ajuda financeira, doações, cesta básica, pensão informal ou qualquer tipo de ajuda de parentes, amigos, vizinhos ou familiares. Essa pergunta NÃO faz parte do fluxo do BPC.
 
 EXEMPLOS DE RESPOSTAS DA LARA (SIGA EXATAMENTE ESTE ESTILO PUNCHY, SECO E DIRETO NAS ETAPAS CADASTRAIS, MAS ACOLHEDOR NO DESABAFO/LUTO):
 
@@ -1035,6 +1039,11 @@ Gere a resposta da Lara (retorne APENAS o texto da mensagem a ser enviada ao cli
       if (!finalReply.includes("Me chamo Lara")) {
         finalReply = `${greetingPrefix}${finalReply}`;
       }
+    }
+
+    // Se ela já disse o nome dela no histórico, remove qualquer repetição acidental da palavra "Lara"
+    if (hasSaidLara) {
+      finalReply = finalReply.replace(/\blara\b/gi, 'atendente');
     }
 
     // Limpar sofrimento_relatado e contexto_offtopic após usá-los uma vez (para não repetir nos próximos turnos!)
