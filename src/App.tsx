@@ -180,6 +180,8 @@ export default function App() {
             const isAposentadoria = 
               userData.fluxo_ativo === 'APOSENTADORIA' ||
               (
+                userData.fluxo_ativo !== 'BPC_IDOSO' &&
+                userData.fluxo_ativo !== 'BPC_DEFICIENTE' &&
                 ((ageNumForDetect >= 55 || contribYearsForDetect >= 15) || hasAposeText) &&
                 !hasDiseaseForDetect
               );

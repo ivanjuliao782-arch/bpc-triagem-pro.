@@ -1174,6 +1174,8 @@ Gere a resposta da Lara (retorne APENAS o texto reescrito da pergunta base, sem 
     const isAposentadoria = (
       user_data?.fluxo_ativo === 'APOSENTADORIA' ||
       (
+        user_data?.fluxo_ativo !== 'BPC_IDOSO' &&
+        user_data?.fluxo_ativo !== 'BPC_DEFICIENTE' &&
         ((ageNumForDetect >= 55 || contribYearsForDetect >= 15) || hasAposeText) &&
         !hasDiseaseForDetect
       )
@@ -1413,9 +1415,29 @@ Gere a resposta da Lara (retorne APENAS o texto reescrito da pergunta base, sem 
    * com base nas informações atualmente gravadas na memória da sessão.
    */
   resolveFSMState(userData: any): { state: string, fluxo_ativo?: string } {
+    if (!userData) return { state: 'AWAITING_NAME' };
+
+    // --- PRÉ-CLASSIFICAÇÃO DE FLUXO E AUTO-INFERÊNCIAS ---
+    let ageNum = this.parseNumber(userData.idade);
+    if (userData.ja_contribuiu === false) {
+      userData.esta_contribuindo_atualmente = false;
+      userData.tempo_parou_contribuir = 'nunca';
+      userData.inss_tempo_carteira = 'nenhum';
+      if (ageNum >= 65) {
+        userData.fluxo_ativo = 'BPC_IDOSO';
+      }
+    }
+
+    let contribYears = this.parseNumber(userData.inss_tempo_carteira);
+    if (ageNum >= 65 && userData.ja_contribuiu === false) {
+      userData.fluxo_ativo = 'BPC_IDOSO';
+    } else if (contribYears >= 15 || (ageNum >= 55 && contribYears >= 5)) {
+      userData.fluxo_ativo = 'APOSENTADORIA';
+    }
+
     // 1. Coleta e validação do Nome
-    if (!userData?.nome_usuario || String(userData.nome_usuario).trim() === '') {
-      return { state: 'AWAITING_NAME' };
+    if (!userData.nome_usuario || String(userData.nome_usuario).trim() === '') {
+      return { state: 'AWAITING_NAME', fluxo_ativo: userData.fluxo_ativo };
     }
 
     // 2. Validação ética de Advogado
@@ -1423,25 +1445,15 @@ Gere a resposta da Lara (retorne APENAS o texto reescrito da pergunta base, sem 
       userData.has_lawyer = userData.has_law_yer;
     }
     if (userData.has_lawyer === undefined || userData.has_lawyer === null) {
-      return { state: 'AWAITING_LAWYER' };
+      return { state: 'AWAITING_LAWYER', fluxo_ativo: userData.fluxo_ativo };
     }
     if (userData.has_lawyer === true || userData.has_lawyer === 'true') {
-      return { state: 'FINISHED' };
+      return { state: 'FINISHED', fluxo_ativo: userData.fluxo_ativo };
     }
 
     // 3. Validação da Idade
     if (userData.idade === undefined || userData.idade === null || String(userData.idade).trim() === '') {
-      return { state: 'AWAITING_AGE' };
-    }
-
-    // Se nunca contribuiu (ja_contribuiu === false), pre-definimos os campos de contribuição e ativamos o fluxo BPC Idoso se tiver idade
-    if (userData.ja_contribuiu === false) {
-      userData.esta_contribuindo_atualmente = false;
-      userData.tempo_parou_contribuir = 'nunca';
-      const ageNum = this.parseNumber(userData.idade);
-      if (ageNum >= 65) {
-        userData.fluxo_ativo = 'BPC_IDOSO';
-      }
+      return { state: 'AWAITING_AGE', fluxo_ativo: userData.fluxo_ativo };
     }
 
     // 4. Tempo de Contribuição Total
@@ -1449,37 +1461,37 @@ Gere a resposta da Lara (retorne APENAS o texto reescrito da pergunta base, sem 
       if (userData.ja_contribuiu === false) {
         userData.inss_tempo_carteira = 'nenhum';
       } else {
-        return { state: 'AWAITING_TOTAL_CONTRIBUTION' };
+        return { state: 'AWAITING_TOTAL_CONTRIBUTION', fluxo_ativo: userData.fluxo_ativo };
       }
     }
 
     // 5. Contribuição Atual
     if (userData.esta_contribuindo_atualmente === undefined || userData.esta_contribuindo_atualmente === null) {
-      return { state: 'AWAITING_CURRENT_CONTRIBUTION' };
+      return { state: 'AWAITING_CURRENT_CONTRIBUTION', fluxo_ativo: userData.fluxo_ativo };
     }
 
     // 6. Tempo de Afastamento (se parou)
     if (userData.esta_contribuindo_atualmente === false) {
       if (userData.tempo_parou_contribuir === undefined || userData.tempo_parou_contribuir === null || String(userData.tempo_parou_contribuir).trim() === '') {
-        return { state: 'AWAITING_LAST_CONTRIBUTION_TIME' };
+        return { state: 'AWAITING_LAST_CONTRIBUTION_TIME', fluxo_ativo: userData.fluxo_ativo };
       }
     }
 
     // 7. Doença
     if (userData.fluxo_ativo !== 'BPC_IDOSO' && (userData.tem_doenca_ou_limitacao === undefined || userData.tem_doenca_ou_limitacao === null)) {
-      return { state: 'AWAITING_DISEASE' };
+      return { state: 'AWAITING_DISEASE', fluxo_ativo: userData.fluxo_ativo };
     }
 
     // 8. Deficiência
     if (userData.fluxo_ativo !== 'BPC_IDOSO' && (userData.tem_deficiencia === undefined || userData.tem_deficiencia === null)) {
-      return { state: 'AWAITING_DISABILITY' };
+      return { state: 'AWAITING_DISABILITY', fluxo_ativo: userData.fluxo_ativo };
     }
 
     // --- FASE DE CLASSIFICAÇÃO AUTOMÁTICA DE FLUXO (ESTEIRA DE DECISÃO INTELIGENTE) ---
     let fluxo_ativo = userData.fluxo_ativo;
 
-    const ageNum = this.parseNumber(userData.idade);
-    const contribYears = this.parseNumber(userData.inss_tempo_carteira);
+    ageNum = this.parseNumber(userData.idade);
+    contribYears = this.parseNumber(userData.inss_tempo_carteira);
 
     if (ageNum >= 65 && userData.ja_contribuiu === false) {
       fluxo_ativo = 'BPC_IDOSO';
@@ -1488,8 +1500,8 @@ Gere a resposta da Lara (retorne APENAS o texto reescrito da pergunta base, sem 
     }
 
     if (!fluxo_ativo) {
-      const ageNum = this.parseNumber(userData.idade);
-      const contribYears = this.parseNumber(userData.inss_tempo_carteira || userData.tempo_contribuicao);
+      ageNum = this.parseNumber(userData.idade);
+      contribYears = this.parseNumber(userData.inss_tempo_carteira || userData.tempo_contribuicao);
       
       const hasDisease = userData.tem_doenca_ou_limitacao === true || 
                         (userData.doenca && String(userData.doenca).toLowerCase() !== 'não' && String(userData.doenca).toLowerCase() !== 'null' && String(userData.doenca).toLowerCase() !== '');
