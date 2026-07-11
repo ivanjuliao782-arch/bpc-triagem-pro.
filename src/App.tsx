@@ -1695,7 +1695,6 @@ export default function App() {
                     <option value="novo_lead">Novos Leads</option>
                     <option value="em_atendimento">Em Atendimento</option>
                     <option value="follow_up">Follow-up</option>
-                    <option value="consulta_marcada">Consulta Marcada</option>
                     <option value="fechados">Fechado (Converteu)</option>
                     <option value="perdidos">Perdido (Reprovado)</option>
                     <option value="com_advogado">Já tem Advogado</option>
