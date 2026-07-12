@@ -323,6 +323,34 @@ export class SofiaEngine {
     return mergedData;
   }
 
+  detectarBeneficiarioTerceiro(text: string): string | null {
+    const clean = text.toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .trim();
+
+    const relacoes = [
+      { key: 'meu filho', label: 'filho' },
+      { key: 'minha filha', label: 'filha' },
+      { key: 'meu marido', label: 'marido' },
+      { key: 'minha esposa', label: 'esposa' },
+      { key: 'meu pai', label: 'pai' },
+      { key: 'minha mae', label: 'mãe' },
+      { key: 'meu neto', label: 'neto' },
+      { key: 'minha neta', label: 'neta' },
+      { key: 'meu irmao', label: 'irmão' },
+      { key: 'minha irma', label: 'irmã' }
+    ];
+
+    for (const rel of relacoes) {
+      const regex = new RegExp(`\\b${rel.key}\\b`, 'i');
+      if (regex.test(clean)) {
+        return rel.label;
+      }
+    }
+    return null;
+  }
+
   async runExtraction(text: string, currentState?: string): Promise<any> {
     const prompt = `Você é um extrator de dados de texto especializado em triagem previdenciária.
 Sua única tarefa é analisar o texto enviado pelo cliente e extrair todas as informações preenchidas para os campos especificados abaixo.
@@ -565,11 +593,26 @@ JSON de retorno:`;
     let extractedData: any = {};
     if (!isGreeting) {
       const currentState = session?.user_data?.state_fsm || undefined;
+
+      // Detecta beneficiário terceiro antes de qualquer coisa (código puro)
+      let beneficiarioTerceiro = session?.user_data?.beneficiario_terceiro || null;
+      if (!beneficiarioTerceiro) {
+        beneficiarioTerceiro = this.detectarBeneficiarioTerceiro(text);
+      }
+      if (beneficiarioTerceiro) {
+        extractedData.beneficiario_terceiro = beneficiarioTerceiro;
+      }
+
       console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 3. Conteúdo enviado ao extractor: "${text}" (currentState: "${currentState}")`);
       if (isAudio) {
         console.log(`[INSTRUMENTAÇÃO ÁUDIO] [${timestamp}] [Lead: ${phone}] 4. Resultado enviado ao extractor: "${text}"`);
       }
-      extractedData = await this.runHybridExtraction(text, currentState);
+      const rawExtracted = await this.runHybridExtraction(text, currentState);
+      extractedData = {
+        ...extractedData,
+        ...rawExtracted
+      };
+
       if (currentState === 'AWAITING_CURRENT_CONTRIBUTION' && session?.user_data?.reformulou_trabalho === true) {
         if (extractedData.esta_contribuindo_atualmente === undefined) {
           extractedData.esta_contribuindo_atualmente = false;
@@ -971,6 +1014,23 @@ JSON de retorno:`;
       dryQuestion = questionsList ? questionsList[Math.floor(Math.random() * questionsList.length)] : "";
     }
 
+    const familiar = user_data.beneficiario_terceiro;
+    if (familiar) {
+      if (stateFsm === 'AWAITING_LAWYER') {
+        dryQuestion = `Você já tem advogado cuidando do caso do seu ${familiar}?`;
+      } else if (stateFsm === 'AWAITING_AGE') {
+        dryQuestion = `Qual a idade do seu ${familiar}?`;
+      } else if (stateFsm === 'AWAITING_DISEASE') {
+        dryQuestion = `O seu ${familiar} tem alguma doença atualmente?`;
+      } else if (stateFsm === 'AWAITING_DISABILITY') {
+        dryQuestion = `O seu ${familiar} tem alguma deficiência?`;
+      } else if (stateFsm === 'INSS_AWAITING_LAST_CONTRIBUTION') {
+        dryQuestion = `Tem quanto tempo que o seu ${familiar} se afastou? Foi em que ano?`;
+      } else if (stateFsm === 'INSS_AWAITING_REPORTS') {
+        dryQuestion = `O seu ${familiar} possui exames, receitas ou laudos médicos recentes?`;
+      }
+    }
+
     let contextStr = "Tom seco, direto e curto nas etapas cadastrais, mas acolhedor no desabafo/luto.";
     if (stateFsm === 'AWAITING_NAME') {
       contextStr = "Contexto: Início de contato, pergunte o nome de forma simples.";
@@ -1067,11 +1127,17 @@ JSON de retorno:`;
         confirmStr = confirmParts.slice(0, -1).join(", ") + " e " + confirmParts[confirmParts.length - 1];
       }
 
-      confirmPrefixToPrepend = `${prefixWord}${nameStr} você ${confirmStr}. `;
+      if (familiar) {
+        confirmPrefixToPrepend = `${prefixWord}${nameStr} seu ${familiar} ${confirmStr}. `;
+      } else {
+        confirmPrefixToPrepend = `${prefixWord}${nameStr} você ${confirmStr}. `;
+      }
     }
 
     if (stateFsm === 'AWAITING_DISABILITY') {
-      const selectedQuestion = "Você tem alguma deficiência física, visual, auditiva ou motora?";
+      const selectedQuestion = familiar 
+        ? `O seu ${familiar} tem alguma deficiência física, visual, auditiva ou motora?`
+        : "Você tem alguma deficiência física, visual, auditiva ou motora?";
       if (confirmPrefixToPrepend) {
         return `${confirmPrefixToPrepend}${selectedQuestion}`;
       }
