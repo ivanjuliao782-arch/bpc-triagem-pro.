@@ -10,7 +10,7 @@ const STATE_QUESTIONS: Record<string, string[]> = {
     "Me fale seu nome por favor"
   ],
   AWAITING_LAWYER: [
-    "Você já tem advogado atuando no seu caso?"
+    "Você já tem advogado cuidando do seu caso?"
   ],
   AWAITING_AGE: [
     "Qual a sua idade?"
@@ -179,6 +179,14 @@ export class SofiaEngine {
       .replace(/[\u0300-\u036f]/g, "")
       .replace(/[^\w\s]/g, "")
       .trim();
+
+    // Se o texto indica dúvida/confusão sobre advogado, garante que has_lawyer NÃO seja extraído
+    const isConfusion = /\b(como assim|nao entendi|nao compreendi|o que|como e|nao entedi|entendi nao|que isso)\b/i.test(cleanText) || 
+                        (text.includes("?") && (cleanText.includes("como") || cleanText.includes("que") || cleanText.includes("assim")));
+    if (isConfusion && currentState === 'AWAITING_LAWYER') {
+      console.log(`[EXTRAÇÃO] Lead demonstrou dúvida/confusão em AWAITING_LAWYER. Removendo has_lawyer do payload.`);
+      delete mergedData.has_lawyer;
+    }
 
     // Auto-inferência de ja_contribuiu = false
     if (
@@ -426,6 +434,13 @@ JSON de retorno:`;
       }
     }
 
+    // 2.5 Moradia/Companhia (BPC_AWAITING_HOUSEHOLD)
+    if (currentState === 'BPC_AWAITING_HOUSEHOLD') {
+      if (clean && clean.length > 0) {
+        data.bpc_pessoas_casa = text.trim();
+      }
+    }
+
     // 3. Renda (BPC_AWAITING_HOUSEHOLD_INCOME)
     if (currentState === 'BPC_AWAITING_HOUSEHOLD_INCOME') {
       if (
@@ -463,6 +478,13 @@ JSON de retorno:`;
       }
     }
 
+    // 5.5 Tempo de afastamento (AWAITING_LAST_CONTRIBUTION_TIME)
+    if (currentState === 'AWAITING_LAST_CONTRIBUTION_TIME') {
+      if (clean && clean.length > 0) {
+        data.tempo_parou_contribuir = text.trim();
+      }
+    }
+
     // 6. Nome (AWAITING_NAME)
     if (currentState === 'AWAITING_NAME') {
       if (this.isValidName(text)) {
@@ -483,6 +505,7 @@ JSON de retorno:`;
     if (currentState === 'BPC_AWAITING_HOUSEHOLD_INCOME' && codeResult.bpc_renda_familiar === undefined) needsFallback = true;
     if (currentState === 'BPC_AWAITING_HOME_STATUS' && !codeResult.bpc_casa_alugada_propria) needsFallback = true;
     if (currentState === 'BPC_AWAITING_CADUNICO' && codeResult.bpc_cad_unico === undefined) needsFallback = true;
+    if (currentState === 'BPC_AWAITING_HOUSEHOLD' && !codeResult.bpc_pessoas_casa) needsFallback = true;
 
     if (currentState === undefined || currentState === 'AWAITING_NAME') {
       needsFallback = true;
@@ -768,6 +791,34 @@ JSON de retorno:`;
     }
     user_data.state_fsm = stateFsm;
 
+    // INTERCEPT DE CONFUSÃO/DÚVIDA PARA PERGUNTA DE ADVOGADO (Garante tom simples e evita loops)
+    const cleanText = text.toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^\w\s]/g, "")
+      .trim();
+
+    const isConfusion = /\b(como assim|nao entendi|nao compreendi|o que|como e|nao entedi|entendi nao|que isso)\b/i.test(cleanText) || 
+                        (text.includes("?") && (cleanText.includes("como") || cleanText.includes("que") || cleanText.includes("assim")));
+
+    if (stateFsm === 'AWAITING_LAWYER' && isConfusion) {
+      console.log(`[AWAITING_LAWYER] Interceptando dúvida/confusão do lead: "${text}". Respondendo pergunta simplificada.`);
+      user_data.has_lawyer = null;
+      const reply = "Você já tem um advogado te ajudando?";
+      const newHistory = [...history, { role: 'user', content: text }, { role: 'assistant', content: reply }];
+      
+      await this.supabase.rpc('save_session_data', {
+        p_phone: phone,
+        p_step: 'welcome',
+        p_user_data_updates: { 
+          has_lawyer: null,
+          history: newHistory,
+          state_fsm: 'AWAITING_LAWYER'
+        }
+      });
+      return reply;
+    }
+
     // GUARDA DETERMINÍSTICO 0: Se o estado calculado for FINISHED, encerra deterministamente sem chamar a IA
     if (stateFsm === 'FINISHED') {
       const finalReply = "Nossa equipe irá avaliar sua situação e assim que possível entraremos em contato novamente";
@@ -915,12 +966,12 @@ JSON de retorno:`;
 
     const shouldConfirmAge = user_data.idade && !hasAskedAge && !hasConfirmedAge;
     
-    // Contribuição
-    const rawContrib = user_data.inss_tempo_carteira || user_data.tempo_contribuicao || user_data.tempo_parou_contribuir || user_data.inss_ultima_contribuicao;
+    // Contribuição (Tempo de afastamento não exige confirmação)
+    const rawContrib = user_data.inss_tempo_carteira || user_data.tempo_contribuicao;
     const shouldConfirmContrib = rawContrib && !hasAskedContrib && !hasConfirmedContrib;
     
     // Moradia/Household
-    const shouldConfirmHousehold = user_data.bpc_pessoas_casa && !hasAskedHousehold && !hasConfirmedHousehold;
+    const shouldConfirmHousehold = false; // Desativado para avançar direto sem confirmação
     
     // Doença
     const shouldConfirmDisease = user_data.doenca && user_data.doenca.toLowerCase() !== 'não' && !hasAskedDisease && !hasConfirmedDisease;
@@ -995,8 +1046,10 @@ DIRETRIZES DE COMUNICAÇÃO E REGRAS DE NEGÓCIO (OBRIGATÓRIO):
 7. NUNCA REPETIR O NOME DO CLIENTE: Não repita o nome do cliente nas mensagens da triagem.
 8. NÃO SEJA INSISTENTE COM O NOME: Se você já perguntou o nome do cliente e ele não informou na mensagem seguinte, NÃO repita a pergunta do nome. Avance para a triagem diretamente.
 9. PROIBIDO CONTRA-POR TRABALHO E BENEFÍCIO: Nunca confronte o cliente sobre ele estar trabalhando vs recebendo benefício. Se precisar saber se trabalha atualmente, pergunte apenas: "Como está sua rotina de trabalho hoje em dia, você está conseguindo trabalhar?".
-10. PROIBIDO AJUDA DE AMIGOS/FAMÍLIA: É terminantemente proibido perguntar se o cliente recebe ajuda financeira, doações, cesta básica, pensão informal ou qualquer tipo de ajuda de parentes, amigos, vizinhos ou familiares. Essa pergunta NÃO faz parte do fluxo do BPC.
+10. PROIBIDO AJUDA INFORMAL EXTERNA (AMIGOS/VIZINHOS/DOAÇÕES): É terminantemente proibido perguntar se o cliente recebe ajuda informal, doações, cesta básica ou auxílios informais de amigos, vizinhos ou parentes de fora. Essa pergunta NÃO faz parte do fluxo do BPC. ATENÇÃO: Esta proibição se refere apenas a auxílios informais externos. É OBRIGATÓRIO e legítimo perguntar sobre a renda formal ou trabalho dos moradores que residem na mesma casa (salário, aposentadoria, pensão, benefício) quando estiver no estado BPC_AWAITING_HOUSEHOLD_INCOME.
 11. DESVIOS DE ASSUNTO E OFF-TOPIC: Caso o usuário mude de assunto, faça reclamações sobre o governo ou INSS, faça perguntas pessoais (como "qual seu nome?", "quem é você?") ou diga coisas fora da triagem, dê uma resposta extremamente curta de empatia ou esclarecimento (1 única frase curta, variando os termos para nunca parecer repetitiva, ex: "Entendo a sua preocupação", "Te compreendo", etc.) e em seguida retorne para a pergunta base abaixo.
+12. SIMPLIFICAÇÃO DA PERGUNTA DE ADVOGADO: Se a pergunta base for sobre advogado, reescreva-a SEMPRE usando linguagem extremamente simples e acessível para idosos, como 'Você já tem advogado cuidando do seu caso?' ou 'Já tem advogado te ajudando?'. É TERMINANTEMENTE PROIBIDO usar termos complexos como 'representando você nesse processo' ou 'representação legal'.
+
 
 DIRETRIZ CRÍTICA DE HUMANIZAÇÃO COM CONTEXTO:
 Sua tarefa é reescrever a pergunta base indicada abaixo de forma humana, natural, acolhedora e direta, seguindo a diretriz de contexto.
@@ -1094,7 +1147,6 @@ Gere a resposta da Lara (retorne APENAS o texto reescrito da pergunta base, sem 
         /mande (o |os |um |uma )?/i,
         /encaminhe/i,
         /documentos para/i,
-        /exames para/i,
         /receitas para/i,
         /laudos para/i,
       ];
@@ -1176,6 +1228,7 @@ Gere a resposta da Lara (retorne APENAS o texto reescrito da pergunta base, sem 
       (
         user_data?.fluxo_ativo !== 'BPC_IDOSO' &&
         user_data?.fluxo_ativo !== 'BPC_DEFICIENTE' &&
+        user_data?.ja_contribuiu !== false &&
         ((ageNumForDetect >= 55 || contribYearsForDetect >= 15) || hasAposeText) &&
         !hasDiseaseForDetect
       )
@@ -1417,22 +1470,12 @@ Gere a resposta da Lara (retorne APENAS o texto reescrito da pergunta base, sem 
   resolveFSMState(userData: any): { state: string, fluxo_ativo?: string } {
     if (!userData) return { state: 'AWAITING_NAME' };
 
-    // --- PRÉ-CLASSIFICAÇÃO DE FLUXO E AUTO-INFERÊNCIAS ---
+    // --- AUTO-INFERÊNCIAS ---
     let ageNum = this.parseNumber(userData.idade);
     if (userData.ja_contribuiu === false) {
       userData.esta_contribuindo_atualmente = false;
       userData.tempo_parou_contribuir = 'nunca';
       userData.inss_tempo_carteira = 'nenhum';
-      if (ageNum >= 65) {
-        userData.fluxo_ativo = 'BPC_IDOSO';
-      }
-    }
-
-    let contribYears = this.parseNumber(userData.inss_tempo_carteira);
-    if (ageNum >= 65 && userData.ja_contribuiu === false) {
-      userData.fluxo_ativo = 'BPC_IDOSO';
-    } else if (contribYears >= 15 || (ageNum >= 55 && contribYears >= 5)) {
-      userData.fluxo_ativo = 'APOSENTADORIA';
     }
 
     // 1. Coleta e validação do Nome
@@ -1478,12 +1521,12 @@ Gere a resposta da Lara (retorne APENAS o texto reescrito da pergunta base, sem 
     }
 
     // 7. Doença
-    if (userData.fluxo_ativo !== 'BPC_IDOSO' && (userData.tem_doenca_ou_limitacao === undefined || userData.tem_doenca_ou_limitacao === null)) {
+    if (userData.tem_doenca_ou_limitacao === undefined || userData.tem_doenca_ou_limitacao === null) {
       return { state: 'AWAITING_DISEASE', fluxo_ativo: userData.fluxo_ativo };
     }
 
     // 8. Deficiência
-    if (userData.fluxo_ativo !== 'BPC_IDOSO' && (userData.tem_deficiencia === undefined || userData.tem_deficiencia === null)) {
+    if (userData.tem_deficiencia === undefined || userData.tem_deficiencia === null) {
       return { state: 'AWAITING_DISABILITY', fluxo_ativo: userData.fluxo_ativo };
     }
 
@@ -1491,10 +1534,14 @@ Gere a resposta da Lara (retorne APENAS o texto reescrito da pergunta base, sem 
     let fluxo_ativo = userData.fluxo_ativo;
 
     ageNum = this.parseNumber(userData.idade);
-    contribYears = this.parseNumber(userData.inss_tempo_carteira);
+    let contribYears = this.parseNumber(userData.inss_tempo_carteira);
 
     if (ageNum >= 65 && userData.ja_contribuiu === false) {
-      fluxo_ativo = 'BPC_IDOSO';
+      if (userData.tem_doenca_ou_limitacao === true || userData.tem_deficiencia === true) {
+        fluxo_ativo = 'BPC_DEFICIENTE';
+      } else {
+        fluxo_ativo = 'BPC_IDOSO';
+      }
     } else if (contribYears >= 15 || (ageNum >= 55 && contribYears >= 5)) {
       fluxo_ativo = 'APOSENTADORIA';
     }

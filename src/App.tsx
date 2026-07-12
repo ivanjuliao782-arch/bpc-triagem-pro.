@@ -182,6 +182,7 @@ export default function App() {
               (
                 userData.fluxo_ativo !== 'BPC_IDOSO' &&
                 userData.fluxo_ativo !== 'BPC_DEFICIENTE' &&
+                userData.ja_contribuiu !== false &&
                 ((ageNumForDetect >= 55 || contribYearsForDetect >= 15) || hasAposeText) &&
                 !hasDiseaseForDetect
               );
