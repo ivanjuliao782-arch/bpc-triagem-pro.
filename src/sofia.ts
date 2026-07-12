@@ -1614,8 +1614,6 @@ Gere a resposta da Lara (retorne APENAS o texto reescrito da pergunta base, sem 
       } else {
         fluxo_ativo = 'BPC_IDOSO';
       }
-    } else if (contribYears >= 15 || (ageNum >= 55 && contribYears >= 5)) {
-      fluxo_ativo = 'APOSENTADORIA';
     }
 
     if (!fluxo_ativo) {
