@@ -1527,6 +1527,11 @@ Gere a resposta da Lara (retorne APENAS o texto reescrito da pergunta base, sem 
       userData.inss_tempo_carteira = 'nenhum';
     }
 
+    // Auto-inferência: Se sabemos se trabalha atualmente, mapeamos diretamente para a contribuição atual
+    if (userData.trabalha_atualmente !== undefined && userData.trabalha_atualmente !== null) {
+      userData.esta_contribuindo_atualmente = userData.trabalha_atualmente;
+    }
+
     // 1. Coleta e validação do Nome
     if (!userData.nome_usuario || String(userData.nome_usuario).trim() === '') {
       return { state: 'AWAITING_NAME', fluxo_ativo: userData.fluxo_ativo };
