@@ -1367,14 +1367,25 @@ Gere a resposta da Lara (retorne APENAS o texto reescrito da pergunta base, sem 
                                (user_data.doenca && user_data.doenca.toLowerCase() !== 'não') ||
                                user_data.tem_deficiencia === true;
 
-    if (temCorteOuProblema) {
+    const temDesesperoFinanceiro = textClean.includes("sobreviver") || 
+                                  textClean.includes("desesper") || 
+                                  textClean.includes("dificuldade") || 
+                                  textClean.includes("passando fome") || 
+                                  textClean.includes("necessidade") ||
+                                  (user_data.sofrimento_relatado && user_data.sofrimento_relatado !== "");
+
+    if (temCorteOuProblema || temDesesperoFinanceiro) {
       const familiar = user_data.beneficiario_terceiro;
-      let empatia = familiar 
-        ? `Que situação difícil, sinto muito pelo seu ${familiar}.`
-        : "Sinto muito que esteja passando por isso.";
+      let empatia = "Sinto muito que esteja passando por isso.";
+      
+      if (temDesesperoFinanceiro) {
+        empatia = "Sinto muito por toda essa dificuldade.";
+      } else if (familiar) {
+        empatia = `Que situação difícil, sinto muito pelo seu ${familiar}.`;
+      }
 
       const cleanReply = finalReply.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-      if (!cleanReply.includes("sinto muito") && !cleanReply.includes("situacao dificil") && !cleanReply.includes("pesado")) {
+      if (!cleanReply.includes("sinto muito") && !cleanReply.includes("situacao dificil") && !cleanReply.includes("pesado") && !cleanReply.includes("dificuldade")) {
         // Se a resposta contiver saudações ou "Pode me chamar de Lara.", insere após isso.
         if (finalReply.includes("Pode me chamar de Lara.")) {
           finalReply = finalReply.replace("Pode me chamar de Lara.", `Pode me chamar de Lara. ${empatia}`);
