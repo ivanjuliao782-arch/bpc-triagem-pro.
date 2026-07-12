@@ -1001,7 +1001,7 @@ JSON de retorno:`;
     const hasConfirmedAge = history.some((h: any) => h.role === 'assistant' && (h.content.toLowerCase().includes('entendido') || h.content.toLowerCase().includes('certo') || h.content.toLowerCase().includes('ok') || h.content.toLowerCase().includes('anotado')) && h.content.toLowerCase().includes('anos'));
     const hasConfirmedContrib = history.some((h: any) => h.role === 'assistant' && (h.content.toLowerCase().includes('entendido') || h.content.toLowerCase().includes('certo') || h.content.toLowerCase().includes('ok') || h.content.toLowerCase().includes('anotado')) && (h.content.toLowerCase().includes('contribuição') || h.content.toLowerCase().includes('contribuiu')));
     const hasConfirmedHousehold = history.some((h: any) => h.role === 'assistant' && (h.content.toLowerCase().includes('entendido') || h.content.toLowerCase().includes('certo') || h.content.toLowerCase().includes('ok') || h.content.toLowerCase().includes('anotado')) && (h.content.toLowerCase().includes('sozinha') || h.content.toLowerCase().includes('sozinho') || h.content.toLowerCase().includes('mora com') || h.content.toLowerCase().includes('morando só')));
-    const hasConfirmedDisease = history.some((h: any) => h.role === 'assistant' && (h.content.toLowerCase().includes('entendido') || h.content.toLowerCase().includes('certo') || h.content.toLowerCase().includes('ok') || h.content.toLowerCase().includes('anotado')) && h.content.toLowerCase().includes('doença'));
+    const hasConfirmedDisease = user_data.doenca && history.some((h: any) => h.role === 'assistant' && (h.content.toLowerCase().includes('entendido') || h.content.toLowerCase().includes('certo') || h.content.toLowerCase().includes('ok') || h.content.toLowerCase().includes('anotado')) && h.content.toLowerCase().includes(user_data.doenca.toLowerCase()));
     const hasConfirmedDisability = history.some((h: any) => h.role === 'assistant' && (h.content.toLowerCase().includes('entendido') || h.content.toLowerCase().includes('certo') || h.content.toLowerCase().includes('ok') || h.content.toLowerCase().includes('anotado')) && h.content.toLowerCase().includes('deficiência'));
 
     const shouldConfirmAge = user_data.idade && !hasAskedAge && !hasConfirmedAge;
@@ -1068,6 +1068,14 @@ JSON de retorno:`;
       }
 
       confirmPrefixToPrepend = `${prefixWord}${nameStr} você ${confirmStr}. `;
+    }
+
+    if (stateFsm === 'AWAITING_DISABILITY') {
+      const selectedQuestion = "Você tem alguma deficiência física, visual, auditiva ou motora?";
+      if (confirmPrefixToPrepend) {
+        return `${confirmPrefixToPrepend}${selectedQuestion}`;
+      }
+      return selectedQuestion;
     }
 
     const promptSofia = `Você é Lara, atendente humana do escritório de advocacia previdenciária da Dra. Mônica Lucioli.
