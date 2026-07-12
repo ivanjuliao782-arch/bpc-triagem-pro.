@@ -591,17 +591,17 @@ JSON de retorno:`;
 
     // 1. Extração prévia de campos do texto antes de qualquer coisa (bloco consolidado)
     let extractedData: any = {};
+
+    // Detecta beneficiário terceiro em qualquer mensagem, antes de tudo (código puro)
+    let beneficiarioTerceiro = session?.user_data?.beneficiario_terceiro || null;
+    const detectedFamiliar = this.detectarBeneficiarioTerceiro(text);
+    if (detectedFamiliar) {
+      beneficiarioTerceiro = detectedFamiliar;
+      extractedData.beneficiario_terceiro = detectedFamiliar;
+    }
+
     if (!isGreeting) {
       const currentState = session?.user_data?.state_fsm || undefined;
-
-      // Detecta beneficiário terceiro antes de qualquer coisa (código puro)
-      let beneficiarioTerceiro = session?.user_data?.beneficiario_terceiro || null;
-      if (!beneficiarioTerceiro) {
-        beneficiarioTerceiro = this.detectarBeneficiarioTerceiro(text);
-      }
-      if (beneficiarioTerceiro) {
-        extractedData.beneficiario_terceiro = beneficiarioTerceiro;
-      }
 
       console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 3. Conteúdo enviado ao extractor: "${text}" (currentState: "${currentState}")`);
       if (isAudio) {
@@ -1605,6 +1605,17 @@ Gere a resposta da Lara (retorne APENAS o texto reescrito da pergunta base, sem 
 
     // --- AUTO-INFERÊNCIAS ---
     let ageNum = this.parseNumber(userData.idade);
+
+    // Auto-inferência para criança beneficiária (idade < 16)
+    const isChildBeneficiary = userData.beneficiario_terceiro && ageNum > 0 && ageNum < 16;
+    if (isChildBeneficiary) {
+      userData.ja_contribuiu = false;
+      userData.esta_contribuindo_atualmente = false;
+      userData.tempo_parou_contribuir = 'nunca';
+      userData.inss_tempo_carteira = 'nenhum';
+      userData.fluxo_ativo = 'BPC_DEFICIENTE';
+    }
+
     if (userData.ja_contribuiu === false) {
       userData.esta_contribuindo_atualmente = false;
       userData.tempo_parou_contribuir = 'nunca';
@@ -1733,7 +1744,9 @@ Gere a resposta da Lara (retorne APENAS o texto reescrito da pergunta base, sem 
     let fluxo_ativo = userData.fluxo_ativo;
 
     // Decisão do fluxo ativo baseada na desqualificação
-    if (!isBpcDisqualified && qualifiesForBpc) {
+    if (isChildBeneficiary) {
+      fluxo_ativo = 'BPC_DEFICIENTE';
+    } else if (!isBpcDisqualified && qualifiesForBpc) {
       fluxo_ativo = temSaude ? 'BPC_DEFICIENTE' : 'BPC_IDOSO';
     } else if (!isInssDisqualified && temSaude) {
       fluxo_ativo = 'INSS_CONTRIBUTIVO';
