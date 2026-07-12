@@ -19,7 +19,7 @@ const STATE_QUESTIONS: Record<string, string[]> = {
     "Quanto tempo você já contribuiu com o INSS?"
   ],
   AWAITING_CURRENT_CONTRIBUTION: [
-    "Você está contribuindo atualmente?"
+    "Você está trabalhando atualmente?"
   ],
   AWAITING_LAST_CONTRIBUTION_TIME: [
     "Há quanto tempo você parou de contribuir?"
@@ -570,6 +570,11 @@ JSON de retorno:`;
         console.log(`[INSTRUMENTAÇÃO ÁUDIO] [${timestamp}] [Lead: ${phone}] 4. Resultado enviado ao extractor: "${text}"`);
       }
       extractedData = await this.runHybridExtraction(text, currentState);
+      if (currentState === 'AWAITING_CURRENT_CONTRIBUTION' && session?.user_data?.reformulou_trabalho === true) {
+        if (extractedData.esta_contribuindo_atualmente === undefined) {
+          extractedData.esta_contribuindo_atualmente = false;
+        }
+      }
       console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 4. Dados extraídos (híbrido): ${JSON.stringify(extractedData)}`);
       if (isAudio) {
         console.log(`[INSTRUMENTAÇÃO ÁUDIO] [${timestamp}] [Lead: ${phone}] 5. Campos extraídos do áudio: ${JSON.stringify(extractedData)}`);
@@ -800,6 +805,41 @@ JSON de retorno:`;
 
     const isConfusion = /\b(como assim|nao entendi|nao compreendi|o que|como e|nao entedi|entendi nao|que isso)\b/i.test(cleanText) || 
                         (text.includes("?") && (cleanText.includes("como") || cleanText.includes("que") || cleanText.includes("assim")));
+
+    // INTERCEPT DE CONFUSÃO/DÚVIDA PARA PERGUNTA DE CONTRIBUIÇÃO (AWAITING_CURRENT_CONTRIBUTION)
+    const isContributionConfusion = (
+      stateFsm === 'AWAITING_CURRENT_CONTRIBUTION' &&
+      (
+        isConfusion ||
+        cleanText.includes("qual carteira") ||
+        cleanText.includes("que carteira") ||
+        cleanText.includes("nao entendi") ||
+        cleanText.includes("nao compreendi") ||
+        cleanText.includes("o que") ||
+        cleanText.includes("como e") ||
+        cleanText.includes("entendi nao")
+      )
+    );
+
+    if (isContributionConfusion) {
+      if (!user_data.reformulou_trabalho) {
+        console.log(`[AWAITING_CURRENT_CONTRIBUTION] Interceptando dúvida/confusão. Reformulando com "Você ainda está trabalhando hoje em dia?".`);
+        user_data.reformulou_trabalho = true;
+        const reply = "Você ainda está trabalhando hoje em dia?";
+        const newHistory = [...history, { role: 'user', content: text }, { role: 'assistant', content: reply }];
+        
+        await this.supabase.rpc('save_session_data', {
+          p_phone: phone,
+          p_step: null,
+          p_user_data_updates: {
+            reformulou_trabalho: true,
+            history: newHistory,
+            state_fsm: 'AWAITING_CURRENT_CONTRIBUTION'
+          }
+        });
+        return reply;
+      }
+    }
 
     if (stateFsm === 'AWAITING_LAWYER' && isConfusion) {
       console.log(`[AWAITING_LAWYER] Interceptando dúvida/confusão do lead: "${text}". Respondendo pergunta simplificada.`);
@@ -1118,9 +1158,9 @@ Gere a resposta da Lara (retorne APENAS o texto reescrito da pergunta base, sem 
         } else {
           console.warn(`⚠️ Correção falhou ou ainda continha termos proibidos. Aplicando fallback de segurança.`);
           if (stateFsm === 'AWAITING_CURRENT_CONTRIBUTION') {
-            finalReply = "Fique tranquilo, o escritório está aqui para proteger seu direito. Pra eu entender melhor, você está contribuindo atualmente?";
+            finalReply = "Fique tranquilo, o escritório está aqui para proteger seu direito. Pra eu entender melhor, você está trabalhando atualmente?";
           } else {
-            finalReply = "Fique tranquilo, estamos aqui para te ajudar a ver tudo isso com calma. Você está contribuindo atualmente?";
+            finalReply = "Fique tranquilo, estamos aqui para te ajudar a ver tudo isso com calma. Você está trabalhando atualmente?";
           }
         }
       } catch (err) {
