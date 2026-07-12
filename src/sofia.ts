@@ -1527,9 +1527,27 @@ Gere a resposta da Lara (retorne APENAS o texto reescrito da pergunta base, sem 
       userData.inss_tempo_carteira = 'nenhum';
     }
 
-    // Auto-inferência: Se sabemos se trabalha atualmente, mapeamos diretamente para a contribuição atual
-    if (userData.trabalha_atualmente !== undefined && userData.trabalha_atualmente !== null) {
-      userData.esta_contribuindo_atualmente = userData.trabalha_atualmente;
+    // Auto-inferência: Se trabalha atualmente, verifica se é formal ou informal para determinar contribuição atual
+    if (userData.trabalha_atualmente === true) {
+      const isFormal = String(userData.inss_como_contribuiu || "").toLowerCase().includes("carteira") || 
+                       String(userData.retirement_work_history || "").toLowerCase().includes("carteira") ||
+                       String(userData.inss_como_contribuiu || "").toLowerCase().includes("assinado") || 
+                       String(userData.inss_como_contribuiu || "").toLowerCase().includes("registro");
+
+      const isInformal = String(userData.inss_como_contribuiu || "").toLowerCase().includes("sem carteira") || 
+                         String(userData.inss_como_contribuiu || "").toLowerCase().includes("informal") ||
+                         String(userData.inss_como_contribuiu || "").toLowerCase().includes("bico") || 
+                         String(userData.inss_como_contribuiu || "").toLowerCase().includes("sem registro") ||
+                         String(userData.inss_como_contribuiu || "").toLowerCase().includes("autonomo") ||
+                         String(userData.inss_como_contribuiu || "").toLowerCase().includes("diarista");
+
+      if (isFormal) {
+        userData.esta_contribuindo_atualmente = true;
+      } else if (isInformal) {
+        userData.esta_contribuindo_atualmente = false;
+      }
+    } else if (userData.trabalha_atualmente === false) {
+      userData.esta_contribuindo_atualmente = false;
     }
 
     // 1. Coleta e validação do Nome
