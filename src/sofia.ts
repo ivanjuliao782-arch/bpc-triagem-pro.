@@ -1316,6 +1316,37 @@ Gere a resposta da Lara (retorne APENAS o texto reescrito da pergunta base, sem 
       }
     }
 
+    // Interceptação determinística por código: Injeta empatia imediata se o cliente relatou sofrimento, corte de benefício ou doença
+    const textClean = text.toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "");
+    
+    const temCorteOuProblema = textClean.includes("cort") || 
+                               textClean.includes("perde") || 
+                               textClean.includes("parou") || 
+                               textClean.includes("cance") || 
+                               textClean.includes("suspen") || 
+                               (user_data.doenca && user_data.doenca.toLowerCase() !== 'não') ||
+                               user_data.tem_deficiencia === true;
+
+    if (temCorteOuProblema) {
+      const familiar = user_data.beneficiario_terceiro;
+      let empatia = familiar 
+        ? `Que situação difícil, sinto muito pelo seu ${familiar}.`
+        : "Sinto muito que esteja passando por isso.";
+
+      if (!finalReply.includes("sinto muito") && !finalReply.includes("situação difícil") && !finalReply.includes("pesado")) {
+        // Se a resposta contiver saudações ou "Pode me chamar de Lara.", insere após isso.
+        if (finalReply.includes("Pode me chamar de Lara.")) {
+          finalReply = finalReply.replace("Pode me chamar de Lara.", `Pode me chamar de Lara. ${empatia}`);
+        } else if (finalReply.includes("Dra. Mônica Lucioli. ")) {
+          finalReply = finalReply.replace("Dra. Mônica Lucioli. ", `Dra. Mônica Lucioli. ${empatia} `);
+        } else {
+          finalReply = `${empatia} ${finalReply}`;
+        }
+      }
+    }
+
 
     // Limpar sofrimento_relatado e contexto_offtopic após usá-los uma vez (para não repetir nos próximos turnos!)
 
