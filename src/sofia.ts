@@ -686,7 +686,13 @@ JSON de retorno:`;
       );
 
       if (leadSentProblemWithoutName) {
-        const finalReply = `${saudacao}! Me chamo Lara, sou atendente do escritório da Dra. Mônica Lucioli. Entendo sua situação. Me fala seu nome para eu registrar e te direcionar certinho.`;
+        let empatia = "Sinto muito que esteja passando por isso.";
+        if (extractedData.beneficiario_terceiro) {
+          empatia = `Que situação difícil, sinto muito pelo seu ${extractedData.beneficiario_terceiro}.`;
+        } else if (extractedData.doenca) {
+          empatia = `Sinto muito que esteja passando por essa dor.`;
+        }
+        const finalReply = `${saudacao}! Me chamo Lara, sou atendente do escritório da Dra. Mônica Lucioli. ${empatia} Me fala seu nome para eu registrar e te ajudar a entender o que pode ser feito.`;
         const initialUserData = {
           history: [
             { role: 'user', content: text },
@@ -1017,7 +1023,7 @@ JSON de retorno:`;
     const familiar = user_data.beneficiario_terceiro;
     if (familiar) {
       if (stateFsm === 'AWAITING_LAWYER') {
-        dryQuestion = `Você já tem advogado cuidando do caso do seu ${familiar}?`;
+        dryQuestion = `Seu ${familiar} já tem advogado cuidando do caso?`;
       } else if (stateFsm === 'AWAITING_AGE') {
         dryQuestion = `Qual a idade do seu ${familiar}?`;
       } else if (stateFsm === 'AWAITING_DISEASE') {
@@ -1128,9 +1134,9 @@ JSON de retorno:`;
       }
 
       if (familiar) {
-        confirmPrefixToPrepend = `${prefixWord}${nameStr} seu ${familiar} ${confirmStr}. `;
+        confirmPrefixToPrepend = `${prefixWord}. Seu ${familiar} ${confirmStr}. `;
       } else {
-        confirmPrefixToPrepend = `${prefixWord}${nameStr} você ${confirmStr}. `;
+        confirmPrefixToPrepend = `${prefixWord}. Você ${confirmStr}. `;
       }
     }
 
@@ -1152,10 +1158,14 @@ DIRETRIZES DE COMUNICAÇÃO E REGRAS DE NEGÓCIO (OBRIGATÓRIO):
 2. MENSAGENS EXTREMAMENTE CURTAS: Escreva respostas muito curtas (máximo 1 ou 2 linhas). Vá direto à pergunta sem enrolação desnecessária.
 3. PROIBIDO NOMES DE BENEFÍCIOS E APOSENTADORIA: Nunca diga siglas ou termos como BPC, LOAS, benefício de prestação continuada, aposentadoria por invalidez/idade/tempo, auxílio-doença, etc. Use termos totalmente genéricos como "seu caso", "sua situação", "seu processo" ou "podemos te ajudar por aqui".
 4. PRIMEIRA INTERAÇÃO (ABERTURA): Se o histórico de mensagens estiver vazio (primeira mensagem do cliente), você deve dar as boas-vindas de forma humana, direta e profissional. Siga exatamente ou no mesmo estilo de (lembrando da regra de NÃO usar emojis): "Boa tarde! Tudo bem?\nMe chamo Lara, sou atendente do escritório da Dra. Mônica Lucioli. Com quem eu falo?" (ou adapte a saudação dependendo do horário do dia).
-5. SENTIMENTOS E EMPATIA REAL PARA VIÚVAS E PROBLEMAS DE SAÚDE (CRÍTICO):
-   Se o cliente relatar falecimento/luto (como viúvas/viúvos) ou desabafar sobre sofrimento e dores graves de saúde, você DEVE sim expressar sentimentos sinceros e acolhimento humano no início da mensagem antes de fazer a pergunta (ex: "Poxa, meus sentimentos pela perda do seu marido", "Nossa, sinto muito por você estar passando por essa dor"). 
-   ATENÇÃO: Não use frases artificiais de robô terapeuta ou corporativo (como "Compreendo perfeitamente, a dor na coluna exige cuidados..."). Fale como uma pessoa de verdade e calorosa do escritório. 
-   Nas fases seguintes da conversa, quando o cliente estiver apenas respondendo a dados de triagem cadastral, seja 100% direta e prática, sem repetir sentimentos.
+5. ACOLHIMENTO E EMPATIA REAL (CRÍTICO):
+   Se o cliente relatar ou se você estiver confirmando que o cliente ou um familiar tem uma doença grave, deficiência, dor, ou teve um benefício cortado (seja na primeira mensagem ou no meio da triagem), você deve obrigatoriamente iniciar sua resposta com uma frase curta, direta e acolhedora de empatia humana real antes de avançar para a próxima pergunta.
+   Exemplos de acolhimento real (não corporativo):
+   - "Que situação difícil, sinto muito."
+   - "Poxa, isso é muito pesado."
+   - "Sinto muito que seu filho esteja passando por isso." (se for familiar)
+   - "Sinto muito que você esteja passando por essa dor."
+   ATENÇÃO: Nunca use jargões de robô como "compreendo sua situação", "entendo sua dor" ou frases corporativas complexas. Seja curto, direto e humano (máximo 1 frase de acolhimento).
 6. RESPOSTA A RESPOSTAS INVÁLIDAS OU MENSAGENS INCOMUNS: Se o cliente enviar brincadeiras, zoeiras ou comentários incomuns (como sobre a voz do bot, assuntos paralelos ou política), ignore a brincadeira, não reaja com humor (proibido usar "kkkk", "rsrs" ou gírias como "Eita") e direcione o cliente de forma profissional para a triagem.
 7. NUNCA REPETIR O NOME DO CLIENTE: Não repita o nome do cliente nas mensagens da triagem.
 8. NÃO SEJA INSISTENTE COM O NOME: Se você já perguntou o nome do cliente e ele não informou na mensagem seguinte, NÃO repita a pergunta do nome. Avance para a triagem diretamente.
