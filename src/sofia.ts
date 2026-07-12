@@ -1602,127 +1602,88 @@ Gere a resposta da Lara (retorne APENAS o texto reescrito da pergunta base, sem 
       return { state: 'AWAITING_DISABILITY', fluxo_ativo: userData.fluxo_ativo };
     }
 
-    // --- FASE DE CLASSIFICAÇÃO AUTOMÁTICA DE FLUXO (ESTEIRA DE DECISÃO INTELIGENTE) ---
+    // --- ESTEIRA DE DECISÃO SEQUENCIAL E COMPLETA (BPC -> INSS -> APOSENTADORIA) ---
+    ageNum = this.parseNumber(userData.idade);
+    let contribYears = this.parseNumber(userData.inss_tempo_carteira || userData.tempo_contribuicao);
+    const hasDisease = userData.tem_doenca_ou_limitacao === true || 
+                      (userData.doenca && String(userData.doenca).toLowerCase() !== 'não' && String(userData.doenca).toLowerCase() !== 'null' && String(userData.doenca).toLowerCase() !== '');
+    const hasDisability = userData.tem_deficiencia === true || 
+                         (userData.deficiencia && String(userData.deficiencia).toLowerCase() !== 'não' && String(userData.deficiencia).toLowerCase() !== 'null' && String(userData.deficiencia).toLowerCase() !== '');
+    const temSaude = hasDisease || hasDisability;
+    const qualifiesForBpc = ageNum >= 65 || temSaude;
+
+    // 1. Avalia desqualificação de BPC por renda familiar alta
+    const isBpcDisqualified = (() => {
+      if (!userData.bpc_pessoas_casa) return false;
+      const hasIncomeInfo = (userData.bpc_renda_familiar !== undefined && userData.bpc_renda_familiar !== null) ||
+                            (userData.bpc_quem_renda !== undefined && userData.bpc_quem_renda !== null && String(userData.bpc_quem_renda).trim() !== '');
+      if (!hasIncomeInfo) return false;
+
+      const familySize = this.parseNumber(userData.bpc_pessoas_casa) || 1;
+      const rawRenda = String(userData.bpc_quem_renda || userData.bpc_renda_familiar || "").toLowerCase();
+      const matches = rawRenda.match(/\d+/g);
+      let totalRenda = 0;
+      if (matches) {
+        totalRenda = matches.reduce((acc, val) => acc + parseInt(val, 10), 0);
+      }
+      const isHighIncome = totalRenda / familySize > 405.25;
+      const hasNoIncomeKeywords = rawRenda.includes("sem renda") || rawRenda.includes("ninguem") || rawRenda.includes("nenhum") || rawRenda.includes("nao tem") || rawRenda.includes("nao possui");
+      return isHighIncome && !hasNoIncomeKeywords;
+    })();
+
+    // 2. Avalia desqualificação de INSS por perda da qualidade de segurado
+    const isInssDisqualified = (() => {
+      const lastContrib = userData.inss_ultima_contribuicao || userData.tempo_parou_contribuir;
+      if (!lastContrib) return false;
+      
+      const yearsAgo = this.parseNumber(lastContrib);
+      const hasTimeText = String(lastContrib).toLowerCase();
+      const lostSegurado = yearsAgo > 3 || 
+                           hasTimeText.includes('nunca') || 
+                           (hasTimeText.includes('ano') && yearsAgo > 3) ||
+                           hasTimeText.includes('5 anos') ||
+                           hasTimeText.includes('afastado');
+      return lostSegurado && userData.esta_contribuindo_atualmente !== true;
+    })();
+
     let fluxo_ativo = userData.fluxo_ativo;
 
-    ageNum = this.parseNumber(userData.idade);
-    let contribYears = this.parseNumber(userData.inss_tempo_carteira);
-
-    if (ageNum >= 65 && userData.ja_contribuiu === false) {
-      if (userData.tem_doenca_ou_limitacao === true || userData.tem_deficiencia === true) {
-        fluxo_ativo = 'BPC_DEFICIENTE';
-      } else {
-        fluxo_ativo = 'BPC_IDOSO';
-      }
+    // Decisão do fluxo ativo baseada na desqualificação
+    if (!isBpcDisqualified && qualifiesForBpc) {
+      fluxo_ativo = temSaude ? 'BPC_DEFICIENTE' : 'BPC_IDOSO';
+    } else if (!isInssDisqualified && temSaude) {
+      fluxo_ativo = 'INSS_CONTRIBUTIVO';
+    } else {
+      fluxo_ativo = 'APOSENTADORIA';
     }
 
-    if (!fluxo_ativo) {
-      ageNum = this.parseNumber(userData.idade);
-      contribYears = this.parseNumber(userData.inss_tempo_carteira || userData.tempo_contribuicao);
+    // Sobrescreve fluxo ativo no userData para persistir
+    userData.fluxo_ativo = fluxo_ativo;
+
+    // --- EXECUÇÃO DOS SUB-FLUXOS DETALHADOS ---
+
+    // 1. Roteiro BPC
+    if (fluxo_ativo === 'BPC_IDOSO' || fluxo_ativo === 'BPC_DEFICIENTE') {
+      if (userData.bpc_pessoas_casa === undefined || userData.bpc_pessoas_casa === null || String(userData.bpc_pessoas_casa).trim() === '') {
+        return { state: 'BPC_AWAITING_HOUSEHOLD', fluxo_ativo };
+      }
+      const hasIncomeInfo = (userData.bpc_renda_familiar !== undefined && userData.bpc_renda_familiar !== null) ||
+                            (userData.bpc_quem_renda !== undefined && userData.bpc_quem_renda !== null && String(userData.bpc_quem_renda).trim() !== '');
+      if (!hasIncomeInfo) {
+        return { state: 'BPC_AWAITING_HOUSEHOLD_INCOME', fluxo_ativo };
+      }
+      if (userData.bpc_casa_alugada_propria === undefined || userData.bpc_casa_alugada_propria === null || String(userData.bpc_casa_alugada_propria).trim() === '') {
+        return { state: 'BPC_AWAITING_HOME_STATUS', fluxo_ativo };
+      }
+      if (userData.bpc_cad_unico === undefined || userData.bpc_cad_unico === null) {
+        return { state: 'BPC_AWAITING_CADUNICO', fluxo_ativo };
+      }
       
-      const hasDisease = userData.tem_doenca_ou_limitacao === true || 
-                        (userData.doenca && String(userData.doenca).toLowerCase() !== 'não' && String(userData.doenca).toLowerCase() !== 'null' && String(userData.doenca).toLowerCase() !== '');
-      const hasDisability = userData.tem_deficiencia === true || 
-                           (userData.deficiencia && String(userData.deficiencia).toLowerCase() !== 'não' && String(userData.deficiencia).toLowerCase() !== 'null' && String(userData.deficiencia).toLowerCase() !== '');
-      const temSaude = hasDisease || hasDisability;
-
-      const tempoParadoNum = this.parseNumber(userData.tempo_parou_contribuir || userData.inss_ultima_contribuicao);
-
-      // 1. temChanceAuxilio
-      const temChanceAuxilio = temSaude && (
-        userData.esta_contribuindo_atualmente === true ||
-        (userData.tempo_parou_contribuir !== undefined && tempoParadoNum <= 36)
-      );
-
-      // 2. temChanceAposentadoria
-      const temChanceAposentadoria = (ageNum >= 55 && contribYears >= 5) || (contribYears >= 15);
-
-      // 3. temChanceBPC
-      const temChanceBPC = (ageNum >= 65) || (
-        temSaude &&
-        userData.esta_contribuindo_atualmente === false &&
-        tempoParadoNum > 24
-      );
-
-      // Ordem de Decisão (Esteira de Decisão de Entrada)
-      if (ageNum >= 65 && !temChanceAuxilio) {
-        fluxo_ativo = 'BPC_IDOSO';
-      } else if (temChanceAuxilio) {
-        fluxo_ativo = 'INSS_CONTRIBUTIVO';
-      } else if (temChanceAposentadoria) {
-        fluxo_ativo = 'APOSENTADORIA';
-      } else if (temChanceBPC) {
-        fluxo_ativo = 'BPC_DEFICIENTE';
-      } else {
-        fluxo_ativo = 'EXCECAO';
-      }
-    }
-
-    if (fluxo_ativo === 'EXCECAO') {
+      // Todas as perguntas de BPC respondidas! Se chegou aqui e não desqualificou, qualifica BPC!
       return { state: 'FINISHED', fluxo_ativo };
     }
 
-    // --- FASE DE SUB-FLUXOS ESPECÍFICOS ---
-
-    // Roteiros BPC (Idoso ou Deficiente)
-    if (fluxo_ativo === 'BPC_IDOSO' || fluxo_ativo === 'BPC_DEFICIENTE') {
-      if (userData.bpc_pessoas_casa === undefined || userData.bpc_pessoas_casa === null || String(userData.bpc_pessoas_casa).trim() === '') {
-        return { state: 'BPC_AWAITING_HOUSEHOLD', fluxo_ativo };
-      }
-      const hasIncomeInfo = (userData.bpc_renda_familiar !== undefined && userData.bpc_renda_familiar !== null) ||
-                            (userData.bpc_quem_renda !== undefined && userData.bpc_quem_renda !== null && String(userData.bpc_quem_renda).trim() !== '');
-      if (!hasIncomeInfo) {
-        return { state: 'BPC_AWAITING_HOUSEHOLD_INCOME', fluxo_ativo };
-      }
-      if (userData.bpc_casa_alugada_propria === undefined || userData.bpc_casa_alugada_propria === null || String(userData.bpc_casa_alugada_propria).trim() === '') {
-        return { state: 'BPC_AWAITING_HOME_STATUS', fluxo_ativo };
-      }
-      if (userData.bpc_cad_unico === undefined || userData.bpc_cad_unico === null) {
-        return { state: 'BPC_AWAITING_CADUNICO', fluxo_ativo };
-      }
-      return { state: 'FINISHED', fluxo_ativo };
-    }
-
-    // Roteiro INSS Contributivo
-    if (fluxo_ativo === 'INSS_CONTRIBUTIVO') {
-      const lastContrib = userData.inss_ultima_contribuicao || userData.tempo_parou_contribuir;
-      if (lastContrib) {
-        const yearsAgo = this.parseNumber(lastContrib);
-        const hasTimeText = String(lastContrib).toLowerCase();
-        const lostSegurado = yearsAgo > 2 || 
-                             hasTimeText.includes('nao') || 
-                             hasTimeText.includes('nunca') || 
-                             (hasTimeText.includes('ano') && yearsAgo > 2) ||
-                             hasTimeText.includes('5 anos') ||
-                             hasTimeText.includes('afastado');
-        
-        if (lostSegurado) {
-          console.log(`⚠️ Lead perdeu qualidade de segurado. Redirecionando para BPC_DEFICIENTE.`);
-          userData.fluxo_ativo = 'BPC_DEFICIENTE';
-          fluxo_ativo = 'BPC_DEFICIENTE';
-        }
-      }
-    }
-
-    // Re-avalia se houve redirecionamento para BPC
-    if (fluxo_ativo === 'BPC_IDOSO' || fluxo_ativo === 'BPC_DEFICIENTE') {
-      if (userData.bpc_pessoas_casa === undefined || userData.bpc_pessoas_casa === null || String(userData.bpc_pessoas_casa).trim() === '') {
-        return { state: 'BPC_AWAITING_HOUSEHOLD', fluxo_ativo };
-      }
-      const hasIncomeInfo = (userData.bpc_renda_familiar !== undefined && userData.bpc_renda_familiar !== null) ||
-                            (userData.bpc_quem_renda !== undefined && userData.bpc_quem_renda !== null && String(userData.bpc_quem_renda).trim() !== '');
-      if (!hasIncomeInfo) {
-        return { state: 'BPC_AWAITING_HOUSEHOLD_INCOME', fluxo_ativo };
-      }
-      if (userData.bpc_casa_alugada_propria === undefined || userData.bpc_casa_alugada_propria === null || String(userData.bpc_casa_alugada_propria).trim() === '') {
-        return { state: 'BPC_AWAITING_HOME_STATUS', fluxo_ativo };
-      }
-      if (userData.bpc_cad_unico === undefined || userData.bpc_cad_unico === null) {
-        return { state: 'BPC_AWAITING_CADUNICO', fluxo_ativo };
-      }
-      return { state: 'FINISHED', fluxo_ativo };
-    }
-
+    // 2. Roteiro INSS Contributivo
     if (fluxo_ativo === 'INSS_CONTRIBUTIVO') {
       if (userData.inss_como_contribuiu === undefined || userData.inss_como_contribuiu === null || String(userData.inss_como_contribuiu).trim() === '') {
         return { state: 'INSS_AWAITING_EMPLOYMENT_TYPE', fluxo_ativo };
@@ -1736,7 +1697,7 @@ Gere a resposta da Lara (retorne APENAS o texto reescrito da pergunta base, sem 
       return { state: 'FINISHED', fluxo_ativo };
     }
 
-    // Roteiro de Aposentadoria
+    // 3. Roteiro Aposentadoria
     if (fluxo_ativo === 'APOSENTADORIA') {
       if (userData.retirement_work_history === undefined || userData.retirement_work_history === null || String(userData.retirement_work_history).trim() === '') {
         return { state: 'RETIREMENT_AWAITING_WORK_HISTORY', fluxo_ativo };
