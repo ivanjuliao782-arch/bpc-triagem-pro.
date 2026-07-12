@@ -295,6 +295,15 @@ export default function App() {
               // 5. CadÚnico ativo: +10 pts
               const cadUnicoAtivo = userData.bpc_cad_unico === true || userData.has_cad_unico === true;
               if (cadUnicoAtivo) tempScore += 10;
+
+              // 6. Doença ou limitação grave: +15 pts
+              if (userData.tem_doenca_ou_limitacao === true) tempScore += 15;
+
+              // 7. Deficiência: +20 pts
+              if (userData.tem_deficiencia === true) tempScore += 20;
+
+              // 8. Acamado ou dependente: +25 pts
+              if (userData.is_bedridden === true) tempScore += 25;
             }
 
             scoreValue = Math.min(100, tempScore);
@@ -1434,6 +1443,9 @@ export default function App() {
                       <div className="flex justify-between"><span>Renda per capita baixa {"(<= 1/2 SM)"}:</span> <span className="text-indigo-400 font-bold">+20 pontos</span></div>
                       <div className="flex justify-between"><span>Mora sozinho / família de baixa renda:</span> <span className="text-indigo-400 font-bold">+10 pontos</span></div>
                       <div className="flex justify-between"><span>CadÚnico ativo:</span> <span className="text-indigo-400 font-bold">+10 pontos</span></div>
+                      <div className="flex justify-between"><span>Doença ou limitação grave:</span> <span className="text-indigo-400 font-bold">+15 pontos</span></div>
+                      <div className="flex justify-between"><span>Deficiência:</span> <span className="text-indigo-400 font-bold">+20 pontos</span></div>
+                      <div className="flex justify-between"><span>Acamado ou dependente:</span> <span className="text-indigo-400 font-bold">+25 pontos</span></div>
                     </div>
                   </div>
                 </div>

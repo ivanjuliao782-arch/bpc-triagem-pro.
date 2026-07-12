@@ -1349,6 +1349,15 @@ Gere a resposta da Lara (retorne APENAS o texto reescrito da pergunta base, sem 
       // 5. CadÚnico ativo: +10 pts
       const cadUnicoAtivo = user_data?.bpc_cad_unico === true || user_data?.has_cad_unico === true;
       if (cadUnicoAtivo) scoreValue += 10;
+
+      // 6. Doença ou limitação grave: +15 pts
+      if (user_data?.tem_doenca_ou_limitacao === true) scoreValue += 15;
+
+      // 7. Deficiência: +20 pts
+      if (user_data?.tem_deficiencia === true) scoreValue += 20;
+
+      // 8. Acamado ou dependente: +25 pts
+      if (user_data?.is_bedridden === true) scoreValue += 25;
     }
 
     let score_percent = Math.min(100, scoreValue);
