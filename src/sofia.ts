@@ -132,44 +132,72 @@ export class SofiaEngine {
     return cleanNoPunct.length <= 15 && greetings.includes(cleanNoPunct);
   }
 
-  private isValidName(text: string): boolean {
-    const clean = text.trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  extrairNomePorCodigo(text: string): string | null {
+    // 1. Normalize
+    let clean = text.toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[?!.,;:-]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+
+    // 2. Remove saudações conhecidas
+    const saudacoes = [
+      "bom dia", "boa tarde", "boa noite", 
+      "tudo bem", "tudo bom", "tudo joia", "como vai",
+      "ola", "oi", "blz", "beleza", "opa", "eae", "eai", "salve"
+    ];
+    for (const s of saudacoes) {
+      clean = clean.replace(new RegExp(`\\b${s}\\b`, 'g'), "").trim();
+    }
+
+    // 3. Remove introduções de nome comuns
+    const intros = [
+      "meu nome e o", "meu nome e a", "meu nome e",
+      "me chamo o", "me chamo a", "me chamo",
+      "pode me chamar de", "pode chamar de",
+      "aqui e o", "aqui e a", "aqui e",
+      "sou o", "sou a", "sou",
+      "fala com o", "fala com a", "fala com"
+    ];
+    for (const intro of intros) {
+      clean = clean.replace(new RegExp(`\\b${intro}\\b`, 'g'), "").trim();
+    }
+
+    // 4. Remove outras stop words comuns
+    const stopWords = ["por favor", "por gentileza", "doutora", "dra", "lara", "atendente", "assistente"];
+    for (const sw of stopWords) {
+      clean = clean.replace(new RegExp(`\\b${sw}\\b`, 'g'), "").trim();
+    }
+
+    // Limpa espaços extras
+    clean = clean.replace(/\s+/g, " ").trim();
+
+    // 5. Validação do nome restante
+    if (clean.length === 0) return null;
     
     // Nomes não contêm números
-    if (/\d/.test(clean)) return false;
+    if (/\d/.test(clean)) return null;
+
+    const words = clean.split(" ");
     
-    // Divide em palavras
-    const words = clean.split(/\s+/).filter(w => w.length > 0);
-    const wordCount = words.length;
+    // Deve ter entre 1 e 4 palavras
+    if (words.length < 1 || words.length > 4) return null;
 
-    // Deve ter entre 1 e 4 palavras (aceitando nomes simples como 'João' ou compostos como 'João Silva')
-    if (wordCount < 1 || wordCount > 4) return false;
-
-    // Lista de verbos comuns, gírias, saudações, pronomes, artigos e stop words que não fazem parte de um nome próprio simples
-    const forbiddenWords = [
-      'fala', 'quero', 'tenho', 'sou', 'estou', 'chamo', 'chama', 'moro', 
-      'trabalho', 'contribuo', 'recebo', 'preciso', 'gostaria', 'saber', 'ajuda', 
-      'ver', 'aposentar', 'aposentadoria', 'inss', 'bpc', 'loas', 'auxilio', 'doenca',
-      'blz', 'beleza', 'opa', 'eae', 'eai', 'salve', 'ola', 'oi', 'tudo', 'bem', 
-      'bom', 'boa', 'dia', 'tarde', 'noite', 'sim', 'nao', 'de', 'do', 'da', 'em', 
-      'para', 'com', 'um', 'uma', 'como', 'quem', 'qual', 'meu', 'minha', 'nome', 
-      'se', 'o', 'a', 'os', 'as', 'uns', 'umas', 'ele', 'ela', 'anos', 'idade', 
-      'velho', 'velha', 'lara', 'monica', 'mônica', 'lucioli',
-      'buceta', 'cu', 'pinto', 'caralho', 'puta', 'fdp', 'merda', 'porra', 'viado'
-    ];
-
-    for (const word of words) {
-      if (forbiddenWords.includes(word)) {
-        return false;
-      }
-      // Evita letras avulsas que não sejam preposições válidas
-      if (word.length < 2 && word !== 'e') {
-        return false;
-      }
+    // Lista de palavras proibidas (verbos de ação comuns ou termos de negação)
+    const forbidden = ["nao", "sim", "advogado", "ajuda", "caso", "processo", "inss", "bpc", "loas", "aposentar", "aposentadoria"];
+    for (const w of words) {
+      if (forbidden.includes(w)) return null;
+      if (w.length < 2 && w !== "e") return null; // Evita letras soltas
     }
-    // Nomes não devem conter pontuações de frases/perguntas
-    if (/[?!.,;:-]/.test(text)) return false;
-    return true;
+
+    // Capitaliza cada palavra do nome
+    const capitalized = words.map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
+    return capitalized;
+  }
+
+  private isValidName(text: string): boolean {
+    return this.extrairNomePorCodigo(text) !== null;
   }
 
   sanitizeExtractedData(mergedData: any, text: string, currentState?: string): any {
@@ -515,8 +543,9 @@ JSON de retorno:`;
 
     // 6. Nome (AWAITING_NAME)
     if (currentState === 'AWAITING_NAME') {
-      if (this.isValidName(text)) {
-        data.nome_usuario = text.trim();
+      const nomeDetectado = this.extrairNomePorCodigo(text);
+      if (nomeDetectado) {
+        data.nome_usuario = nomeDetectado;
       }
     }
 
@@ -935,9 +964,10 @@ JSON de retorno:`;
     }
 
     // GUARDA DETERMINÍSTICO 1: Força o Passo 2 sem chamar a IA apenas se o texto de fato se parecer com um nome próprio real
-    if (stateFsm === 'AWAITING_NAME' && text.trim().split(' ').length <= 4 && this.isValidName(text)) {
-        console.log(`🔒 SOFT-GUARD NOME: Nome próprio simples "${text}" detectado. Salvando e prosseguindo para IA.`);
-        const nome = text.trim();
+    const nomeDetectado = this.extrairNomePorCodigo(text);
+    if (stateFsm === 'AWAITING_NAME' && nomeDetectado) {
+        console.log(`🔒 SOFT-GUARD NOME: Nome próprio simples "${nomeDetectado}" detectado. Salvando e prosseguindo para IA.`);
+        const nome = nomeDetectado;
         const newHistory = [...history, { role: 'user', content: text }];
         const updates = {
             history: newHistory,
