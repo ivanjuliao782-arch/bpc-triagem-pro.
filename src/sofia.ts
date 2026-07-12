@@ -469,8 +469,8 @@ JSON de retorno:`;
     }
 
     // 2. Idade (AWAITING_AGE)
-    if (currentState === 'AWAITING_AGE' || clean.includes("anos") || /\b\d{2}\b/.test(clean)) {
-      const match = clean.match(/\b\d{2}\b/);
+    if (currentState === 'AWAITING_AGE' || clean.includes("anos") || /\b\d{1,2}\b/.test(clean)) {
+      const match = clean.match(/\b\d{1,2}\b/);
       if (match) {
         data.idade = parseInt(match[0], 10);
       } else {
@@ -1365,7 +1365,8 @@ Gere a resposta da Lara (retorne APENAS o texto reescrito da pergunta base, sem 
         ? `Que situação difícil, sinto muito pelo seu ${familiar}.`
         : "Sinto muito que esteja passando por isso.";
 
-      if (!finalReply.includes("sinto muito") && !finalReply.includes("situação difícil") && !finalReply.includes("pesado")) {
+      const cleanReply = finalReply.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+      if (!cleanReply.includes("sinto muito") && !cleanReply.includes("situacao dificil") && !cleanReply.includes("pesado")) {
         // Se a resposta contiver saudações ou "Pode me chamar de Lara.", insere após isso.
         if (finalReply.includes("Pode me chamar de Lara.")) {
           finalReply = finalReply.replace("Pode me chamar de Lara.", `Pode me chamar de Lara. ${empatia}`);
