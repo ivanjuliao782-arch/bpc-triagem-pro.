@@ -362,14 +362,14 @@ Campos a extrair:
 - nome_usuario: (string ou null) O nome próprio do cliente (ex: João, Maria, José). ATENÇÃO: Nunca extraia saudações, gírias ou verbos de saudação como nome próprio (por exemplo, se o cliente enviar "Oi", "Olá", "Fala", "Blz", "Bom dia", "Quero", "Tenho", NUNCA extraia esses termos no campo nome_usuario; retorne null para esses casos).
 - sofrimento_relatado: (string ou null) Se o cliente relatar sofrimento emocional, luto, desespero, perda recente, dor física, limitação ou incapacidade grave para o trabalho (ex: "estou sofrendo muito", "meu marido faleceu", "estou na cama com dor", "estou desesperado", "problema no joelho que não deixa trabalhar", "dor na coluna forte", "depressão grave"). Extraia a frase ou descrição curta do sofrimento/dor/perda/incapacidade/limitação relatado.
 - has_lawyer: (boolean ou null) Se o cliente já possui um advogado para o seu caso (true se tiver, false se disser que não tem, ex: "não tenho", "não tenho advogado", "não", e null se não for mencionado).
-- idade: (string/number ou null) A idade ou ano de nascimento do beneficiário principal (se o caso for de um familiar, extraia a idade desse familiar beneficiário doente/deficiente, ignorando a idade de outros familiares saudáveis. Por exemplo, no texto "uma filha de 7 anos especial e outra de 33 que trabalha", extraia 7).
+- idade: (string/number ou null) A idade ou ano de nascimento se puder ser deduzida.
 - trabalha_atualmente: (boolean ou null) Se o cliente trabalha hoje em dia. ATENÇÃO: Infira como false automaticamente se o cliente mencionar expressões que indicam diretamente que ele não trabalha ou não tem atividade remunerada (por exemplo: "não tenho renda", "estou desempregado(a)", "estou sem trabalhar", "não tenho como trabalhar", "sou de cama", "não trabalho").
 - esta_contribuindo_atualmente: (boolean ou null) Se o cliente está fazendo contribuições/pagando o INSS atualmente.
 - tempo_parou_contribuir: (string ou null) Tempo ou ano em que parou de contribuir, caso não contribua atualmente (ex: "parou há 2 anos", "última foi em 2020", "nunca contribuiu").
 - tem_deficiencia: (boolean ou null) Se o cliente relatou ter alguma deficiência física, mental, sensorial ou intelectual.
 - ja_contribuiu: (boolean ou string ou null) Se o cliente já pagou ou contribuiu para o INSS na vida. ATENÇÃO: Se o cliente disser que tempo de contribuição (ex: "15 anos de contribuição" ou "trabalhei de carteira assinada"), classifique ja_contribuiu como true ou a descrição correspondente.
 - tem_doenca_ou_limitacao: (boolean ou null) Se o cliente relatar alguma doença, incapacidade, problema de saúde, sequela de acidente, deficiência ou limitação.
-- doenca: (string ou null) O nome, descrição ou diagnóstico da doença, dor ou problema de saúde do beneficiário principal (ignore doenças ou dores de outros parentes saudáveis ou não envolvidos no benefício principal).
+- doenca: (string ou null) O nome, descrição ou diagnóstico da doença, dor ou problema de saúde relatado pelo cliente (ex: "hérnia de disco", "cisto sinovial", "gota e reumatismo").
 - acidente: (string ou null) O nome, descrição ou tipo de acidente sofrido pelo cliente caso relatado (ex: "acidente de moto", "acidente de trabalho").
 - inss_tempo_carteira: (string ou null) Tempo trabalhado de carteira assinada ou tempo de contribuição mencionado (ex: "15 anos").
 - bpc_pessoas_casa: (string ou null) Quantidade ou quem são as pessoas que moram com ele.
@@ -614,6 +614,10 @@ JSON de retorno:`;
         ...extractedData,
         ...rawExtracted
       };
+
+      if (session?.user_data?.beneficiario_terceiro && session?.user_data?.idade !== undefined && session?.user_data?.idade !== null) {
+        delete extractedData.idade;
+      }
 
       if (currentState === 'AWAITING_CURRENT_CONTRIBUTION' && session?.user_data?.reformulou_trabalho === true) {
         if (extractedData.esta_contribuindo_atualmente === undefined) {
