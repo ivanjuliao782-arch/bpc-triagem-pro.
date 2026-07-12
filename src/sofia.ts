@@ -1377,6 +1377,27 @@ Gere a resposta da Lara (retorne APENAS o texto reescrito da pergunta base, sem 
       }
     }
 
+    // Injeção de saudação calorosa ao transitar para a pergunta de advogado
+    if (stateFsm === 'AWAITING_LAWYER') {
+      const hasAskedLawyer = history.some((h: any) => h.role === 'assistant' && h.content.toLowerCase().includes('advogado'));
+      if (!hasAskedLawyer && user_data.nome_usuario) {
+        const hour = parseInt(new Date().toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', hour12: false }));
+        let saudacao = "Boa noite";
+        if (hour >= 6 && hour < 12) saudacao = "Bom dia";
+        else if (hour >= 12 && hour < 18) saudacao = "Boa tarde";
+        
+        let greeting = `Olá, ${user_data.nome_usuario}! ${saudacao}.`;
+        const textCleanLower = text.toLowerCase();
+        if (textCleanLower.includes("tudo bem") || textCleanLower.includes("tudo bom")) {
+          greeting = `Tudo bem por aqui, ${user_data.nome_usuario}! ${saudacao}.`;
+        }
+        
+        if (!finalReply.includes(user_data.nome_usuario)) {
+          finalReply = `${greeting} ${finalReply}`;
+        }
+      }
+    }
+
 
     // Limpar sofrimento_relatado e contexto_offtopic após usá-los uma vez (para não repetir nos próximos turnos!)
 
