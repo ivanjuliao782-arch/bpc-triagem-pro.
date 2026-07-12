@@ -61,7 +61,7 @@ const STATE_QUESTIONS: Record<string, string[]> = {
     "Já trabalhou em serviço público, exército ou escola técnica antes de 1998?"
   ],
   FINISHED: [
-    "Nossa equipe irá avaliar sua situação e assim que possível entraremos em contato novamente"
+    "Com base no que você me contou nossa equipe vai analisar melhor o seu caso. Assim que possível entraremos em contato novamente"
   ]
 };
 
@@ -696,7 +696,15 @@ JSON de retorno:`;
 
     // GUARDA GLOBAL: Se a sessão já está no estado FINISHED, não processa nada - retorna mensagem de encerramento
     if (session && session.user_data?.state_fsm === 'FINISHED' && session.user_data?.status_final !== 'com_advogado') {
-      const respostaFinal = `Nossa equipe irá avaliar sua situação e assim que possível entraremos em contato novamente`;
+      const cleanText = text.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+      const isThanks = /\b(obrigad|valeu|agradec|tks|thanks|obg)\b/i.test(cleanText);
+      if (isThanks) {
+        const respostaAgradecimento = "De nada, daqui alguns minutos um profissional entrará em contato com você.";
+        console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] GUARDA GLOBAL FINISHED (AGRADECIMENTO): Retornando retribuição.`);
+        console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 9. Resposta final enviada ao cliente: "${respostaAgradecimento}"`);
+        return respostaAgradecimento;
+      }
+      const respostaFinal = `Com base no que você me contou nossa equipe vai analisar melhor o seu caso. Assim que possível entraremos em contato novamente`;
       console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] GUARDA GLOBAL FINISHED: sessão já encerrada. Retornando mensagem de handoff.`);
       console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 9. Resposta final enviada ao cliente: "${respostaFinal}"`);
       return respostaFinal;
@@ -945,7 +953,7 @@ JSON de retorno:`;
 
     // GUARDA DETERMINÍSTICO 0: Se o estado calculado for FINISHED, encerra deterministamente sem chamar a IA
     if (stateFsm === 'FINISHED') {
-      const finalReply = "Nossa equipe irá avaliar sua situação e assim que possível entraremos em contato novamente";
+      const finalReply = "Com base no que você me contou nossa equipe vai analisar melhor o seu caso. Assim que possível entraremos em contato novamente";
       const newHistory = [...history, { role: 'user', content: text }, { role: 'assistant', content: finalReply }];
       
       const updates = {
