@@ -1441,10 +1441,17 @@ Gere a resposta da Lara (retorne APENAS o texto reescrito da pergunta base, sem 
           finalReply = finalReply.replace(`${saudacao}! Tudo bem?`, `${saudacao}, ${user_data.nome_usuario}! Tudo bem?`);
         } else {
           // Caso contrário, prepende o greeting normal
-          let greeting = `Olá, ${user_data.nome_usuario}! ${saudacao}.`;
-          const textCleanLower = text.toLowerCase();
-          if (textCleanLower.includes("tudo bem") || textCleanLower.includes("tudo bom")) {
-            greeting = `Tudo bem por aqui, ${user_data.nome_usuario}! ${saudacao}.`;
+          // SE JÁ HOUVE INTERAÇÃO ANTERIOR (histórico longo), não repetimos o "Boa noite/Bom dia"
+          const hasPreviousGreetings = history.length > 2;
+          let greeting = "";
+          if (hasPreviousGreetings) {
+            greeting = `Prazer, ${user_data.nome_usuario}!`;
+          } else {
+            greeting = `Olá, ${user_data.nome_usuario}! ${saudacao}.`;
+            const textCleanLower = text.toLowerCase();
+            if (textCleanLower.includes("tudo bem") || textCleanLower.includes("tudo bom")) {
+              greeting = `Tudo bem por aqui, ${user_data.nome_usuario}! ${saudacao}.`;
+            }
           }
           if (!finalReply.includes(user_data.nome_usuario)) {
             finalReply = `${greeting} ${finalReply}`;
