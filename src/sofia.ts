@@ -342,6 +342,20 @@ export class SofiaEngine {
       mergedData.tempo_parou_contribuir = mergedData.inss_ultima_contribuicao;
     }
 
+    // Sanitização de tempo de contribuição para evitar duplicações de palavras na fala da IA
+    if (mergedData.inss_tempo_carteira) {
+      const cleanVal = String(mergedData.inss_tempo_carteira).toLowerCase();
+      const matchNum = cleanVal.match(/\d+/);
+      if (matchNum) {
+        const num = parseInt(matchNum[0], 10);
+        if (cleanVal.includes("mes") || cleanVal.includes("mese")) {
+          mergedData.inss_tempo_carteira = `${num} ${num === 1 ? 'mês' : 'meses'}`;
+        } else {
+          mergedData.inss_tempo_carteira = `${num} ${num === 1 ? 'ano' : 'anos'}`;
+        }
+      }
+    }
+
     // 4. Name validation
     if (mergedData.nome_usuario && !this.isValidName(mergedData.nome_usuario)) {
       console.log(`⚠️ Nome pré-extraído/IA "${mergedData.nome_usuario}" rejeitado pelas regras de validação.`);
@@ -1419,14 +1433,19 @@ Gere a resposta da Lara (retorne APENAS o texto reescrito da pergunta base, sem 
         if (hour >= 6 && hour < 12) saudacao = "Bom dia";
         else if (hour >= 12 && hour < 18) saudacao = "Boa tarde";
         
-        let greeting = `Olá, ${user_data.nome_usuario}! ${saudacao}.`;
-        const textCleanLower = text.toLowerCase();
-        if (textCleanLower.includes("tudo bem") || textCleanLower.includes("tudo bom")) {
-          greeting = `Tudo bem por aqui, ${user_data.nome_usuario}! ${saudacao}.`;
-        }
-        
-        if (!finalReply.includes(user_data.nome_usuario)) {
-          finalReply = `${greeting} ${finalReply}`;
+        if (finalReply.includes("Me chamo Lara")) {
+          // Se for a apresentação de boas-vindas, personaliza a saudação existente em vez de duplicar
+          finalReply = finalReply.replace(`${saudacao}! Tudo bem?`, `${saudacao}, ${user_data.nome_usuario}! Tudo bem?`);
+        } else {
+          // Caso contrário, prepende o greeting normal
+          let greeting = `Olá, ${user_data.nome_usuario}! ${saudacao}.`;
+          const textCleanLower = text.toLowerCase();
+          if (textCleanLower.includes("tudo bem") || textCleanLower.includes("tudo bom")) {
+            greeting = `Tudo bem por aqui, ${user_data.nome_usuario}! ${saudacao}.`;
+          }
+          if (!finalReply.includes(user_data.nome_usuario)) {
+            finalReply = `${greeting} ${finalReply}`;
+          }
         }
       }
     }
