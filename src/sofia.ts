@@ -648,6 +648,19 @@ JSON de retorno:`;
         delete extractedData.idade;
       }
 
+      // Trava para evitar que doenças já registradas sejam sobrescritas por negações em turnos posteriores
+      const oldDoenca = session?.user_data?.doenca;
+      if (oldDoenca && oldDoenca.toLowerCase() !== 'não' && oldDoenca.toLowerCase() !== 'nao' && oldDoenca.trim() !== '') {
+        delete extractedData.doenca;
+        delete extractedData.tem_doenca_ou_limitacao;
+      }
+
+      const oldDeficiencia = session?.user_data?.deficiencia;
+      if (oldDeficiencia && oldDeficiencia.toLowerCase() !== 'não' && oldDeficiencia.toLowerCase() !== 'nao' && oldDeficiencia.trim() !== '') {
+        delete extractedData.deficiencia;
+        delete extractedData.tem_deficiencia;
+      }
+
       if (currentState === 'AWAITING_CURRENT_CONTRIBUTION' && session?.user_data?.reformulou_trabalho === true) {
         if (extractedData.esta_contribuindo_atualmente === undefined) {
           extractedData.esta_contribuindo_atualmente = false;
