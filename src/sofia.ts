@@ -416,6 +416,7 @@ Campos a extrair:
 - inss_tempo_carteira: (string ou null) Tempo trabalhado de carteira assinada ou tempo de contribuição mencionado (ex: "15 anos").
 - bpc_pessoas_casa: (string ou null) Quantidade ou quem são as pessoas que moram com ele.
 - bpc_parentesco: (string ou null) Grau de parentesco das pessoas que moram com ele.
+- bpc_renda_familiar: (boolean ou null) Se o cliente ou alguém na casa dele possui renda, salário, pensão, benefício, aposentadoria ou faz bicos/trabalho informal (true se tiver alguma renda/receber dinheiro/fizer bicos/trabalho, false se disser que não recebe nada, não tem renda ou usar expressões como "quem me dera", e null se não for mencionado).
 - bpc_quem_renda: (string ou null) Quem na casa tem renda e qual o valor.
 - bpc_casa_alugada_propria: (string ou null) Se a casa é alugada, própria, cedida, etc.
 - bpc_cad_unico: (boolean ou string ou null) Se tem Cadastro Único (CadÚnico).
