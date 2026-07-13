@@ -1874,8 +1874,13 @@ Gere a resposta da Lara (retorne APENAS o texto reescrito da pergunta base, sem 
 
     let fluxo_ativo = userData.fluxo_ativo;
 
+    // Se o cliente tem idade de aposentadoria e tempo de contribuição suficiente, direciona direto para APOSENTADORIA
+    const qualifiesForAposentadoriaIdade = (ageNum >= 62 && contribYears >= 15);
+
     // Decisão do fluxo ativo baseada na desqualificação
-    if (isChildBeneficiary) {
+    if (qualifiesForAposentadoriaIdade) {
+      fluxo_ativo = 'APOSENTADORIA';
+    } else if (isChildBeneficiary) {
       fluxo_ativo = 'BPC_DEFICIENTE';
     } else if (!isBpcDisqualified && qualifiesForBpc) {
       fluxo_ativo = temSaude ? 'BPC_DEFICIENTE' : 'BPC_IDOSO';
