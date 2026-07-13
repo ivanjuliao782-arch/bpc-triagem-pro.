@@ -1730,6 +1730,16 @@ Gere a resposta da Lara (retorne APENAS o texto reescrito da pergunta base, sem 
       userData.inss_tempo_carteira = 'nenhum';
     }
 
+    // Auto-inferência de deficiência com base em diagnósticos conhecidos de deficiência severa
+    if (userData.doenca) {
+      const diseaseClean = userData.doenca.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+      const isSevereDisability = /\b(paralisia|autis|down|cadeir|cegu|ceg|surd|cadeira de rodas|amputa|deficient|intelectual|retardo|mental|esquizofren|paralisado|membro)\b/i.test(diseaseClean);
+      if (isSevereDisability) {
+        userData.tem_deficiencia = true;
+        userData.deficiencia = userData.doenca;
+      }
+    }
+
     // Auto-inferência: Se trabalha atualmente, verifica se é formal ou informal para determinar contribuição atual
     if (userData.trabalha_atualmente === true) {
       const isFormal = String(userData.inss_como_contribuiu || "").toLowerCase().includes("carteira") || 
