@@ -1190,6 +1190,8 @@ JSON de retorno:`;
     }
 
     let confirmPrefixToPrepend = "";
+    // LÓGICA DE CONFIRMAÇÃO DE DADOS UPFRONT DESATIVADA TOTALMENTE (evita comportamento de papagaio)
+    /*
     if (confirmParts.length > 0) {
       const nameStr = nameVal ? `, ${nameVal},` : "";
       const variations = ['Certo', 'Ok', 'Anotado'];
@@ -1210,6 +1212,7 @@ JSON de retorno:`;
         confirmPrefixToPrepend = `${prefixWord}. Você ${confirmStr}. `;
       }
     }
+    */
 
     if (stateFsm === 'AWAITING_DISABILITY') {
       const selectedQuestion = familiar 
