@@ -569,8 +569,9 @@ JSON de retorno:`;
 
   async runHybridExtraction(text: string, currentState?: string): Promise<any> {
     const codeResult = this.interpretador_codigo(text, currentState);
-
-    let needsFallback = false;
+    // Lista de estados que o interpretador_codigo já resolve com segurança sem precisar de IA
+    const estadosResolvidosPorCodigo = ['AWAITING_NAME', 'AWAITING_LAWYER', 'AWAITING_AGE', 'BPC_AWAITING_HOUSEHOLD_INCOME', 'BPC_AWAITING_HOME_STATUS', 'BPC_AWAITING_CADUNICO', 'BPC_AWAITING_HOUSEHOLD'];
+    let needsFallback = true; // Por padrão, SEMPRE usa IA como rede de segurança
     if (currentState === 'AWAITING_NAME' && !codeResult.nome_usuario) needsFallback = true;
     if (currentState === 'AWAITING_LAWYER' && codeResult.has_lawyer === undefined) needsFallback = true;
     if (currentState === 'AWAITING_AGE' && !codeResult.idade) needsFallback = true;
@@ -578,9 +579,15 @@ JSON de retorno:`;
     if (currentState === 'BPC_AWAITING_HOME_STATUS' && !codeResult.bpc_casa_alugada_propria) needsFallback = true;
     if (currentState === 'BPC_AWAITING_CADUNICO' && codeResult.bpc_cad_unico === undefined) needsFallback = true;
     if (currentState === 'BPC_AWAITING_HOUSEHOLD' && !codeResult.bpc_pessoas_casa) needsFallback = true;
-
-    if (currentState === undefined || currentState === 'AWAITING_NAME') {
-      needsFallback = true;
+    // Só marca como resolvido por código (false) se o estado está na lista segura E o código de fato extraiu o dado
+    if (estadosResolvidosPorCodigo.includes(currentState || '')) {
+      if (currentState === 'AWAITING_NAME' && codeResult.nome_usuario) needsFallback = false;
+      if (currentState === 'AWAITING_LAWYER' && codeResult.has_lawyer !== undefined) needsFallback = false;
+      if (currentState === 'AWAITING_AGE' && codeResult.idade) needsFallback = false;
+      if (currentState === 'BPC_AWAITING_HOUSEHOLD_INCOME' && codeResult.bpc_renda_familiar !== undefined) needsFallback = false;
+      if (currentState === 'BPC_AWAITING_HOME_STATUS' && codeResult.bpc_casa_alugada_propria) needsFallback = false;
+      if (currentState === 'BPC_AWAITING_CADUNICO' && codeResult.bpc_cad_unico !== undefined) needsFallback = false;
+      if (currentState === 'BPC_AWAITING_HOUSEHOLD' && codeResult.bpc_pessoas_casa) needsFallback = false;
     }
 
     if (!needsFallback) {
@@ -979,6 +986,33 @@ JSON de retorno:`;
       return reply;
     }
 
+    // GUARDA DETERMINÍSTICO: Pergunta embutida na resposta do cliente (ex: "porque?", "por que?", "pra que?")
+    const hasEmbeddedQuestion = /\b(por\s*que|porque|pra\s*que|para\s*que|como\s*assim)\b.*\?|\?.*\b(por\s*que|porque|pra\s*que|como\s*assim)\b/i.test(text);
+
+    if (hasEmbeddedQuestion && stateFsm !== 'AWAITING_LAWYER' && stateFsm !== 'AWAITING_CURRENT_CONTRIBUTION') {
+      const esclarecimentosFixos: Record<string, string> = {
+        'AWAITING_NAME': "É só pra eu poder te chamar certinho.",
+        'AWAITING_AGE': "É pra gente confirmar se você já tem direito a certos processos.",
+        'AWAITING_TOTAL_CONTRIBUTION': "É pra gente calcular certinho seu tempo de INSS.",
+        'AWAITING_CURRENT_CONTRIBUTION': "É pra gente entender sua situação atual de trabalho.",
+        'AWAITING_LAST_CONTRIBUTION_TIME': "É pra gente saber se ainda dá tempo de entrar com seu processo.",
+        'AWAITING_DISEASE': "É pra gente ver se isso conta a seu favor no processo.",
+        'AWAITING_DISABILITY': "É pra gente ver se isso conta a seu favor no processo.",
+        'BPC_AWAITING_HOUSEHOLD': "É pra gente entender lares e famílias.",
+        'BPC_AWAITING_HOUSEHOLD_INCOME': "É uma exigência pra esse tipo de processo.",
+        'BPC_AWAITING_HOME_STATUS': "É pra gente completar seu cadastro certinho.",
+        'BPC_AWAITING_CADUNICO': "É uma exigência pra esse tipo de processo.",
+        'INSS_AWAITING_EMPLOYMENT_TYPE': "É pra gente entender seu histórico de trabalho.",
+        'INSS_AWAITING_LAST_CONTRIBUTION': "É pra gente ver se ainda dá tempo de entrar com seu processo.",
+        'INSS_AWAITING_REPORTS': "Isso ajuda muito a fortalecer seu processo.",
+        'RETIREMENT_AWAITING_WORK_HISTORY': "É pra gente calcular certinho seu tempo de trabalho.",
+        'RETIREMENT_AWAITING_SPECIAL_RURAL': "Isso pode aumentar seu tempo de contribuição.",
+        'RETIREMENT_AWAITING_OTHER_PERIODS': "Isso pode contar a seu favor no cálculo."
+      };
+      const esclarecimento = esclarecimentosFixos[stateFsm] || "É só pra gente entender melhor seu caso.";
+      user_data.esclarecimento_pendente = esclarecimento;
+    }
+
     // GUARDA DETERMINÍSTICO 0: Se o estado calculado for FINISHED, encerra deterministamente sem chamar a IA
     if (stateFsm === 'FINISHED') {
       const finalReply = "Com base no que você me contou nossa equipe vai analisar melhor o seu caso. Assim que possível entraremos em contato novamente";
@@ -1248,6 +1282,7 @@ DIRETRIZES DE COMUNICAÇÃO E REGRAS DE NEGÓCIO (OBRIGATÓRIO):
 10. PROIBIDO AJUDA INFORMAL EXTERNA (AMIGOS/VIZINHOS/DOAÇÕES): É terminantemente proibido perguntar se o cliente recebe ajuda informal, doações, cesta básica ou auxílios informais de amigos, vizinhos ou parentes de fora. Essa pergunta NÃO faz parte do fluxo do BPC. ATENÇÃO: Esta proibição se refere apenas a auxílios informais externos. É OBRIGATÓRIO e legítimo perguntar sobre a renda formal ou trabalho dos moradores que residem na mesma casa (salário, aposentadoria, pensão, benefício) quando estiver no estado BPC_AWAITING_HOUSEHOLD_INCOME.
 11. DESVIOS DE ASSUNTO E OFF-TOPIC: Caso o usuário mude de assunto, faça reclamações sobre o governo ou INSS, faça perguntas pessoais (como "qual seu nome?", "quem é você?") ou diga coisas fora da triagem, dê uma resposta extremamente curta de empatia ou esclarecimento (1 única frase curta, variando os termos para nunca parecer repetitiva, ex: "Entendo a sua preocupação", "Te compreendo", etc.) e em seguida retorne para a pergunta base abaixo.
 12. SIMPLIFICAÇÃO DA PERGUNTA DE ADVOGADO: Se a pergunta base for sobre advogado, reescreva-a SEMPRE usando linguagem extremamente simples e acessível para idosos, como 'Você já tem advogado cuidando do seu caso?' ou 'Já tem advogado te ajudando?'. É TERMINANTEMENTE PROIBIDO usar termos complexos como 'representando você nesse processo' ou 'representação legal'.
+13. RECONHECIMENTO CONTEXTUAL OBRIGATÓRIO (CRÍTICO): Antes de fazer a pergunta seguinte, você DEVE sempre demonstrar que entendeu e prestou atenção na última mensagem do cliente — mesmo que seja curta, uma dúvida, um comentário ou apenas uma resposta direta. É TERMINANTEMENTE PROIBIDO ignorar o que o cliente disse e simplesmente emendar a próxima pergunta de forma seca e desconectada, como se fosse um robô que não leu a mensagem anterior. Se a última mensagem do cliente contiver uma pergunta, dúvida ou comentário (de qualquer forma que seja escrito), responda em 1 frase curta e humana reconhecendo isso ANTES de fazer a próxima pergunta. Se for apenas uma resposta direta sem nada embutido, ainda assim é permitido reconhecer brevemente antes de seguir, mas sem se alongar.
 
 
 DIRETRIZ CRÍTICA DE HUMANIZAÇÃO COM CONTEXTO:
@@ -1277,6 +1312,11 @@ Gere a resposta da Lara (retorne APENAS o texto reescrito da pergunta base, sem 
       finalReply = dryQuestion;
     }
     finalReply = finalReply.trim();
+
+    if (user_data.esclarecimento_pendente) {
+      finalReply = `${user_data.esclarecimento_pendente} ${finalReply}`;
+      delete user_data.esclarecimento_pendente;
+    }
 
     if (confirmPrefixToPrepend && !finalReply.includes(confirmPrefixToPrepend.trim())) {
       finalReply = `${confirmPrefixToPrepend}${finalReply}`;
