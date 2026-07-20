@@ -376,12 +376,26 @@ export class SofiaEngine {
       { key: 'minha filha', label: 'filha' },
       { key: 'meu marido', label: 'marido' },
       { key: 'minha esposa', label: 'esposa' },
+      { key: 'meu companheiro', label: 'companheiro' },
+      { key: 'minha companheira', label: 'companheira' },
       { key: 'meu pai', label: 'pai' },
       { key: 'minha mae', label: 'mãe' },
       { key: 'meu neto', label: 'neto' },
       { key: 'minha neta', label: 'neta' },
       { key: 'meu irmao', label: 'irmão' },
-      { key: 'minha irma', label: 'irmã' }
+      { key: 'minha irma', label: 'irmã' },
+      { key: 'meu avo', label: 'avô' },
+      { key: 'minha avo', label: 'avó' },
+      { key: 'meu tio', label: 'tio' },
+      { key: 'minha tia', label: 'tia' },
+      { key: 'meu sogro', label: 'sogro' },
+      { key: 'minha sogra', label: 'sogra' },
+      { key: 'meu sobrinho', label: 'sobrinho' },
+      { key: 'minha sobrinha', label: 'sobrinha' },
+      { key: 'meu genro', label: 'genro' },
+      { key: 'minha nora', label: 'nora' },
+      { key: 'meu enteado', label: 'enteado' },
+      { key: 'minha enteada', label: 'enteada' }
     ];
 
     for (const rel of relacoes) {
@@ -527,13 +541,18 @@ JSON de retorno:`;
       }
     }
 
-    // 4. Moradia (BPC_AWAITING_HOME_STATUS)
     if (currentState === 'BPC_AWAITING_HOME_STATUS') {
-      if (clean.includes("alugada") || clean.includes("aluguel")) {
+      const mentionsRua = /\b(moro|moramos|vivo|vivemos|somos)\b.{0,15}\b(na rua|nas ruas)\b|\brua\b.{0,15}\b(moro|moramos|mesmo)\b/i.test(clean) ||
+                           /\b(debaixo da ponte|embaixo da ponte)\b/i.test(clean);
+      const mentionsCedidaTerceiro = /\b(amigo|amiga|conhecido|conhecida|parente|vizinho|vizinha|cunhado|cunhada|sogro|sogra|avo|avó|tio|tia|irma|irmao)\b.{0,20}\b(emprest|cedeu|deu a casa|deixou ficar)/i.test(clean);
+
+      if (mentionsRua) {
+        data.bpc_casa_alugada_propria = 'situacao_de_rua';
+      } else if (clean.includes("aluga") || clean.includes("alugu")) {
         data.bpc_casa_alugada_propria = 'alugada';
-      } else if (clean.includes("propria") || clean.includes("minha")) {
+      } else if (clean.includes("propri") || clean.includes("minha")) {
         data.bpc_casa_alugada_propria = 'propria';
-      } else if (clean.includes("cedida") || clean.includes("emprestada") || clean.includes("de favor")) {
+      } else if (clean.includes("cedid") || clean.includes("emprest") || clean.includes("de favor") || mentionsCedidaTerceiro) {
         data.bpc_casa_alugada_propria = 'cedida';
       }
     }
@@ -739,7 +758,19 @@ JSON de retorno:`;
         console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 9. Resposta final enviada ao cliente: "${respostaAgradecimento}"`);
         return respostaAgradecimento;
       }
-      const respostaFinal = `Com base no que você me contou nossa equipe vai analisar melhor o seu caso. Assim que possível entraremos em contato novamente`;
+      
+      let respostaFinal = `Com base no que você me contou nossa equipe vai analisar melhor o seu caso. Assim que possível entraremos em contato novamente`;
+      if (session.user_data?.triagem_encerrada_msg_enviada) {
+        respostaFinal = "Essa parte específica só a nossa equipe consegue confirmar depois de analisar seu caso com calma — mas já registrei sua pergunta pra eles. Assim que tivermos uma resposta, entramos em contato.";
+      } else {
+        const updates = { triagem_encerrada_msg_enviada: true };
+        await this.supabase.rpc('save_session_data', {
+          p_phone: phone,
+          p_step: 'finished',
+          p_user_data_updates: updates
+        });
+      }
+
       console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] GUARDA GLOBAL FINISHED: sessão já encerrada. Retornando mensagem de handoff.`);
       console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 9. Resposta final enviada ao cliente: "${respostaFinal}"`);
       return respostaFinal;
@@ -1020,7 +1051,8 @@ JSON de retorno:`;
       
       const updates = {
         history: newHistory,
-        state_fsm: 'FINISHED'
+        state_fsm: 'FINISHED',
+        triagem_encerrada_msg_enviada: true
       };
 
       await this.supabase.rpc('save_session_data', {
@@ -1100,7 +1132,8 @@ JSON de retorno:`;
     });
 
     const alreadyCorrected = history.some((h: any) => h.role === 'assistant' && h.content.includes("Pode me chamar de Lara."));
-    const clientCalledWrongName = calledWrongName && !alreadyCorrected;
+    const ehPrimeiraMensagem = history.filter((h: any) => h.role === 'user').length <= 1;
+    const clientCalledWrongName = calledWrongName && !alreadyCorrected && !ehPrimeiraMensagem;
 
     // Pega a pergunta crua correspondente ao estado atual
     let dryQuestion = "";
@@ -1128,18 +1161,41 @@ JSON de retorno:`;
 
     const familiar = user_data.beneficiario_terceiro;
     if (familiar) {
+      const fem = ['filha', 'esposa', 'mãe', 'neta', 'irmã', 'avó', 'tia', 'sogra', 'sobrinha', 'nora', 'enteada', 'companheira'].includes(familiar.toLowerCase());
+      const art = fem ? 'A sua' : 'O seu';
+      const artLC = fem ? 'sua' : 'seu';
+      const prep = fem ? 'da' : 'do';
+      const pron = fem ? 'ela' : 'ele';
+      const pronPoss = fem ? 'dela' : 'dele';
+
       if (stateFsm === 'AWAITING_LAWYER') {
-        dryQuestion = `Seu ${familiar} já tem advogado cuidando do caso?`;
+        dryQuestion = `${art} ${familiar} já tem advogado cuidando do caso?`;
       } else if (stateFsm === 'AWAITING_AGE') {
-        dryQuestion = `Qual a idade do seu ${familiar}?`;
+        dryQuestion = `Qual a idade ${prep} ${artLC} ${familiar}?`;
       } else if (stateFsm === 'AWAITING_DISEASE') {
-        dryQuestion = `O seu ${familiar} tem alguma doença atualmente?`;
+        dryQuestion = `${art} ${familiar} tem alguma doença atualmente?`;
       } else if (stateFsm === 'AWAITING_DISABILITY') {
-        dryQuestion = `O seu ${familiar} tem alguma deficiência?`;
+        dryQuestion = `${art} ${familiar} tem alguma deficiência?`;
+      } else if (stateFsm === 'AWAITING_TOTAL_CONTRIBUTION') {
+        dryQuestion = `${art} ${familiar} já trabalhou de carteira assinada ou contribuiu para o INSS?`;
+      } else if (stateFsm === 'AWAITING_CURRENT_CONTRIBUTION') {
+        dryQuestion = `Como está a rotina de trabalho ${prep} ${artLC} ${familiar} hoje em dia? ${pron.toUpperCase()} está conseguindo trabalhar?`;
+      } else if (stateFsm === 'AWAITING_LAST_CONTRIBUTION_TIME') {
+        dryQuestion = `Tem quanto tempo que ${art.toLowerCase()} ${familiar} se afastou ou parou de trabalhar?`;
+      } else if (stateFsm === 'INSS_AWAITING_EMPLOYMENT_TYPE') {
+        dryQuestion = `Como ${art.toLowerCase()} ${familiar} contribuía para o INSS? Era por carteira assinada, carnê ou MEI?`;
       } else if (stateFsm === 'INSS_AWAITING_LAST_CONTRIBUTION') {
-        dryQuestion = `Tem quanto tempo que o seu ${familiar} se afastou? Foi em que ano?`;
+        dryQuestion = `Tem quanto tempo que ${art.toLowerCase()} ${familiar} se afastou? Foi em que ano?`;
       } else if (stateFsm === 'INSS_AWAITING_REPORTS') {
-        dryQuestion = `O seu ${familiar} possui exames, receitas ou laudos médicos recentes?`;
+        dryQuestion = `${art} ${familiar} possui exames, receitas ou laudos médicos recentes?`;
+      } else if (stateFsm === 'BPC_AWAITING_HOUSEHOLD') {
+        dryQuestion = `Quem mora com ${art.toLowerCase()} ${familiar} na casa ${pronPoss} hoje?`;
+      } else if (stateFsm === 'BPC_AWAITING_HOUSEHOLD_INCOME') {
+        dryQuestion = `Das pessoas que moram com ${art.toLowerCase()} ${familiar}, alguém trabalha ou recebe algum dinheiro?`;
+      } else if (stateFsm === 'BPC_AWAITING_HOME_STATUS') {
+        dryQuestion = `A casa ${prep} ${artLC} ${familiar} é própria, alugada ou cedida?`;
+      } else if (stateFsm === 'BPC_AWAITING_CADUNICO') {
+        dryQuestion = `${art} ${familiar} possui CadÚnico atualizado?`;
       }
     }
 
@@ -1445,7 +1501,10 @@ Gere a resposta da Lara (retorne APENAS o texto reescrito da pergunta base, sem 
                                   textClean.includes("necessidade") ||
                                   (user_data.sofrimento_relatado && user_data.sofrimento_relatado !== "");
 
-    if (temCorteOuProblema || temDesesperoFinanceiro) {
+    const sofrimentoAtualParaComparacao = user_data.sofrimento_relatado || user_data.doenca || '';
+    const ultimoComEmpatia = user_data.ultimo_sofrimento_com_empatia === undefined ? undefined : (user_data.ultimo_sofrimento_com_empatia || "");
+
+    if ((temCorteOuProblema || temDesesperoFinanceiro) && (ultimoComEmpatia === undefined || sofrimentoAtualParaComparacao !== ultimoComEmpatia)) {
       const familiar = user_data.beneficiario_terceiro;
       let empatia = "Sinto muito que esteja passando por isso.";
       
@@ -1466,6 +1525,7 @@ Gere a resposta da Lara (retorne APENAS o texto reescrito da pergunta base, sem 
           finalReply = `${empatia} ${finalReply}`;
         }
       }
+      user_data.ultimo_sofrimento_com_empatia = sofrimentoAtualParaComparacao;
     }
 
     // Injeção de saudação calorosa ao transitar para a pergunta de advogado
@@ -1713,6 +1773,14 @@ Gere a resposta da Lara (retorne APENAS o texto reescrito da pergunta base, sem 
         updates.sofrimento_relatado = null;
       }
 
+      if (user_data.ultimo_sofrimento_com_empatia !== undefined) {
+        updates.ultimo_sofrimento_com_empatia = user_data.ultimo_sofrimento_com_empatia;
+      }
+
+      if (finalState === 'FINISHED') {
+        updates.triagem_encerrada_msg_enviada = true;
+      }
+
       console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 6. Payload enviado ao Supabase (fim-AI): step="${this.mapFsmToStep(finalState)}", updates=${JSON.stringify(updates)}`);
 
       const { data: newMergedData, error } = await this.supabase.rpc('save_session_data', {
@@ -1876,6 +1944,44 @@ Gere a resposta da Lara (retorne APENAS o texto reescrito da pergunta base, sem 
       }
     }
 
+    // Desvio imediato para idosos (65+), evitando perguntas de capacidade laboral ou saúde
+    if (ageNum >= 65) {
+      let contribYears = this.parseNumber(userData.inss_tempo_carteira);
+      const qualifiesForAposentadoriaIdade = contribYears >= 15;
+      
+      const fluxo_ativo = qualifiesForAposentadoriaIdade ? 'APOSENTADORIA' : 'BPC_IDOSO';
+      userData.fluxo_ativo = fluxo_ativo;
+
+      if (fluxo_ativo === 'BPC_IDOSO') {
+        if (userData.bpc_pessoas_casa === undefined || userData.bpc_pessoas_casa === null || String(userData.bpc_pessoas_casa).trim() === '') {
+          return { state: 'BPC_AWAITING_HOUSEHOLD', fluxo_ativo };
+        }
+        const hasIncomeInfo = (userData.bpc_renda_familiar !== undefined && userData.bpc_renda_familiar !== null) ||
+                              (userData.bpc_quem_renda !== undefined && userData.bpc_quem_renda !== null && String(userData.bpc_quem_renda).trim() !== '');
+        if (!hasIncomeInfo) {
+          return { state: 'BPC_AWAITING_HOUSEHOLD_INCOME', fluxo_ativo };
+        }
+        if (userData.bpc_casa_alugada_propria === undefined || userData.bpc_casa_alugada_propria === null || String(userData.bpc_casa_alugada_propria).trim() === '') {
+          return { state: 'BPC_AWAITING_HOME_STATUS', fluxo_ativo };
+        }
+        if (userData.bpc_cad_unico === undefined || userData.bpc_cad_unico === null) {
+          return { state: 'BPC_AWAITING_CADUNICO', fluxo_ativo };
+        }
+        return { state: 'FINISHED', fluxo_ativo };
+      } else {
+        if (userData.retirement_work_history === undefined || userData.retirement_work_history === null || String(userData.retirement_work_history).trim() === '') {
+          return { state: 'RETIREMENT_AWAITING_WORK_HISTORY', fluxo_ativo };
+        }
+        if (userData.retirement_special_rural === undefined || userData.retirement_special_rural === null || String(userData.retirement_special_rural).trim() === '') {
+          return { state: 'RETIREMENT_AWAITING_SPECIAL_RURAL', fluxo_ativo };
+        }
+        if (userData.retirement_other_periods === undefined || userData.retirement_other_periods === null || String(userData.retirement_other_periods).trim() === '') {
+          return { state: 'RETIREMENT_AWAITING_OTHER_PERIODS', fluxo_ativo };
+        }
+        return { state: 'FINISHED', fluxo_ativo };
+      }
+    }
+
     // 5. Contribuição Atual
     if (userData.esta_contribuindo_atualmente === undefined || userData.esta_contribuindo_atualmente === null) {
       return { state: 'AWAITING_CURRENT_CONTRIBUTION', fluxo_ativo: userData.fluxo_ativo };
@@ -1906,7 +2012,7 @@ Gere a resposta da Lara (retorne APENAS o texto reescrito da pergunta base, sem 
     const hasDisability = userData.tem_deficiencia === true || 
                          (userData.deficiencia && String(userData.deficiencia).toLowerCase() !== 'não' && String(userData.deficiencia).toLowerCase() !== 'null' && String(userData.deficiencia).toLowerCase() !== '');
     const temSaude = hasDisease || hasDisability;
-    const qualifiesForBpc = ageNum >= 65 || temSaude;
+    const qualifiesForBpc = ageNum >= 65 || hasDisability;
 
     // 1. Avalia desqualificação de BPC por renda familiar alta
     const isBpcDisqualified = (() => {
@@ -1953,7 +2059,7 @@ Gere a resposta da Lara (retorne APENAS o texto reescrito da pergunta base, sem 
     } else if (isChildBeneficiary) {
       fluxo_ativo = 'BPC_DEFICIENTE';
     } else if (!isBpcDisqualified && qualifiesForBpc) {
-      fluxo_ativo = temSaude ? 'BPC_DEFICIENTE' : 'BPC_IDOSO';
+      fluxo_ativo = hasDisability ? 'BPC_DEFICIENTE' : 'BPC_IDOSO';
     } else if (!isInssDisqualified && temSaude) {
       fluxo_ativo = 'INSS_CONTRIBUTIVO';
     } else {
