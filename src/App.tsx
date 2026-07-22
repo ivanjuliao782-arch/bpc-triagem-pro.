@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { supabase } from './lib/supabase';
+import { calcularScorePrevidenciario } from './lib/score';
 import { 
   Users, 
   CheckCircle2, 
@@ -23,7 +24,9 @@ import {
   AlertOctagon,
   LogOut,
   Send,
-  Plus
+  Plus,
+  Menu,
+  X
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -80,6 +83,10 @@ interface Lead {
   sem_renda?: boolean;
   cidade?: string;
   has_lawyer?: boolean;
+  is_recoverable?: boolean;
+  lawyer_has_action?: string;
+  lawyer_has_contract?: boolean;
+  lawyer_has_procuracao?: boolean;
   raw_user_data?: any;
   tempo_resposta?: number;
 }
@@ -92,6 +99,7 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<SidebarTab>('leads');
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   
   // Tickers locais para SLA (tempo decorrido em segundos desde o horario_entrada)
   const [elapsedTimes, setElapsedTimes] = useState<{ [key: string]: number }>({});
@@ -153,171 +161,15 @@ export default function App() {
           const hasDisease = userData.doenca && userData.doenca.toLowerCase() !== 'não';
 
           // --- CÁLCULO DE SCORE PREVIDENCIÁRIO AUTOMÁTICO ---
-          let scoreValue = userData.score_total !== undefined ? userData.score_total : 0;
-          if (userData.score_total === undefined) {
-            let tempScore = 0;
-            const parseAgeLocal = (v: any) => {
-              if (!v) return 0;
-              const match = String(v).match(/\d+/);
-              return match ? parseInt(match[0], 10) : 0;
-            };
-            const parseContribLocal = (v: any) => {
-              if (!v) return 0;
-              const match = String(v).match(/\d+/);
-              return match ? parseInt(match[0], 10) : 0;
-            };
-
-            const ageNumForDetect = parseAgeLocal(userData.idade || age);
-            const contribYearsForDetect = parseContribLocal(userData.tempo_contribuicao || contributionYears);
-            const hasDiseaseForDetect = userData.tem_doenca_ou_limitacao === true || hasDisease;
-
-            const historyForDetect = userData.history || [];
-            const hasAposeText = historyForDetect.some((h: any) => 
-              String(h.content || "").toLowerCase().includes("aposentar") || 
-              String(h.content || "").toLowerCase().includes("aposentadoria")
-            );
-
-            const isAposentadoria = 
-              userData.fluxo_ativo === 'APOSENTADORIA' ||
-              (
-                userData.fluxo_ativo !== 'BPC_IDOSO' &&
-                userData.fluxo_ativo !== 'BPC_DEFICIENTE' &&
-                userData.ja_contribuiu !== false &&
-                ((ageNumForDetect >= 55 || contribYearsForDetect >= 15) || hasAposeText) &&
-                !hasDiseaseForDetect
-              );
-            
-            if (isAposentadoria) {
-              // 1. Contribuição
-              const parseContrib = (v: any) => {
-                if (!v) return 0;
-                const match = String(v).match(/\d+/);
-                return match ? parseInt(match[0], 10) : 0;
-              };
-              const contribYears = parseContrib(userData.tempo_contribuicao || contributionYears);
-              if (contribYears >= 28) {
-                tempScore += 40;
-              } else if (contribYears >= 15 && contribYears <= 27) {
-                tempScore += 25;
-              }
-
-              // 2. Idade
-              const parseAge = (v: any) => {
-                if (!v) return 0;
-                const match = String(v).match(/\d+/);
-                return match ? parseInt(match[0], 10) : 0;
-              };
-              const ageNum = parseAge(userData.idade || age);
-              if (ageNum >= 60) {
-                tempScore += 20;
-              } else if (ageNum >= 55 && ageNum <= 59) {
-                tempScore += 15;
-              }
-
-              // 3. Sem advogado
-              if (userData.has_lawyer !== true) {
-                tempScore += 15;
-              }
-
-              // 4. Carteira assinada
-              const workHistory = String(
-                userData.retirement_work_history ||
-                userData.inss_como_contribuiu ||
-                ""
-              ).toLowerCase();
-              if (workHistory.includes('carteira') || workHistory.includes('assinado') || workHistory.includes('registro')) {
-                tempScore += 10;
-              }
-
-              // 5. Trabalho especial ou rural
-              const specialRural = String(userData.retirement_special_rural || "").toLowerCase();
-              const hasSpecial = (
-                specialRural.includes('especial') ||
-                specialRural.includes('insalubre') ||
-                specialRural.includes('perigo') ||
-                specialRural.includes('ruido') ||
-                specialRural.includes('quimico') ||
-                specialRural.includes('calor') ||
-                specialRural.includes('eletricidade')
-              );
-              const hasRural = (
-                specialRural.includes('rural') ||
-                specialRural.includes('roça') ||
-                specialRural.includes('campo') ||
-                specialRural.includes('lavoura') ||
-                specialRural.includes('colono')
-              );
-              if (hasSpecial || hasRural) {
-                tempScore += 20;
-              }
-
-              // 6. Documentos em mãos
-              const hasDocs = userData.tem_docs_em_maos === true;
-              if (hasDocs) {
-                tempScore += 10;
-              }
-            } else {
-              // 1. Idade >= 65 anos: +40 pts
-              const parseAge = (v: any) => {
-                if (!v) return 0;
-                const match = String(v).match(/\d+/);
-                return match ? parseInt(match[0], 10) : 0;
-              };
-              const ageNum = parseAge(userData.idade || age);
-              if (ageNum >= 65) tempScore += 40;
-
-              // 2. Nunca contribuiu: +20 pts
-              const neverContrib = userData.ja_contribuiu === false ||
-                                   String(userData.inss_tempo_carteira).toLowerCase() === 'nenhum' ||
-                                   String(userData.tempo_parou_contribuir).toLowerCase() === 'nunca' ||
-                                   String(userData.inss_ultima_contribuicao).toLowerCase().includes('não contribuiu');
-              if (neverContrib) tempScore += 20;
-
-              // 3. Renda per capita baixa: +20 pts
-              const rendaVal = String(userData.bpc_quem_renda || "").toLowerCase();
-              const isLowIncome = userData.has_no_income === true || 
-                                  userData.sem_renda === true ||
-                                  rendaVal.includes("nenhum") || 
-                                  rendaVal.includes("ninguem") || 
-                                  rendaVal.includes("sem renda") || 
-                                  rendaVal.includes("não tem") || 
-                                  rendaVal.includes("não possui") || 
-                                  (rendaVal.match(/\d+/) && parseInt((rendaVal.match(/\d+/) || ["0"])[0]) <= 706);
-              if (isLowIncome) tempScore += 20;
-
-              // 4. Mora sozinho/família baixa renda: +10 pts
-              const moraSozinhoOuBaixaRenda = String(userData.bpc_pessoas_casa).toLowerCase().includes("sozinh") ||
-                                              userData.bpc_pessoas_casa === 1 ||
-                                              userData.bpc_pessoas_casa === '1' ||
-                                              isLowIncome;
-              if (moraSozinhoOuBaixaRenda) tempScore += 10;
-
-              // 5. CadÚnico ativo: +10 pts
-              const cadUnicoAtivo = userData.bpc_cad_unico === true || userData.has_cad_unico === true;
-              if (cadUnicoAtivo) tempScore += 10;
-
-              // 6. Doença ou limitação grave: +15 pts
-              if (userData.tem_doenca_ou_limitacao === true) tempScore += 15;
-
-              // 7. Deficiência: +20 pts
-              if (userData.tem_deficiencia === true) tempScore += 20;
-
-              // 8. Acamado ou dependente: +25 pts
-              if (userData.is_bedridden === true) tempScore += 25;
-            }
-
-            scoreValue = Math.min(100, tempScore);
+          let scoreValue = calcularScorePrevidenciario(userData);
+          
+          if (userData.state_fsm === 'FINISHED' && userData.score_total !== undefined && userData.is_recoverable !== true) {
+            scoreValue = userData.score_total;
           }
 
           let scoreClass: ScoreClassification = 'Frio';
           if (scoreValue >= 70) scoreClass = 'Quente';
           else if (scoreValue >= 40) scoreClass = 'Morno';
-
-          // Se tem advogado: score zerado e coluna separada
-          if (userData.has_lawyer === true) {
-            scoreValue = 0;
-            scoreClass = 'Frio';
-          }
 
           // Determinar status do Kanban com base no status salvo (fonte única de verdade)
           let status: Status = 'novo_lead';
@@ -327,7 +179,7 @@ export default function App() {
             // Fallback caso não haja status explícito
             if (userData.status_final === 'Reprovado') {
               status = 'perdidos';
-            } else if (userData.has_lawyer === true || userData.status_final === 'com_advogado') {
+            } else if ((userData.has_lawyer === true && userData.is_recoverable === false) || userData.status_final === 'com_advogado') {
               status = 'com_advogado';
             } else if (userData.status_final === 'Encaminhado') {
               status = 'novo_lead'; // Leads novos qualificados entram em Novos Leads para serem assumidos
@@ -385,6 +237,10 @@ export default function App() {
             acamado: userData.acamado !== undefined ? userData.acamado : undefined,
             sem_renda: userData.sem_renda !== undefined ? userData.sem_renda : undefined,
             has_lawyer: userData.has_lawyer === true ? true : undefined,
+            is_recoverable: userData.is_recoverable !== undefined ? userData.is_recoverable : undefined,
+            lawyer_has_action: userData.lawyer_has_action || undefined,
+            lawyer_has_contract: userData.lawyer_has_contract !== undefined ? userData.lawyer_has_contract : undefined,
+            lawyer_has_procuracao: userData.lawyer_has_procuracao !== undefined ? userData.lawyer_has_procuracao : undefined,
             tempo_resposta: userData.tempo_resposta !== undefined ? userData.tempo_resposta : undefined,
             retirement_work_history: userData.retirement_work_history || undefined,
             retirement_special_rural: userData.retirement_special_rural || undefined,
@@ -678,7 +534,20 @@ export default function App() {
     <div className="h-screen bg-[#070709] text-gray-200 flex font-sans antialiased overflow-hidden">
       
       {/* 1. MENU LATERAL */}
-      <aside className="w-64 bg-[#0D0D12] border-r border-[#1C1C24] flex flex-col justify-between shrink-0">
+      {isSidebarOpen && (
+        <div 
+          className="md:hidden fixed inset-0 bg-black/60 z-40"
+          onClick={() => setIsSidebarOpen(false)}
+        />
+      )}
+      <aside className={`
+        ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'} 
+        transition-transform duration-300 ease-in-out
+        fixed md:relative 
+        top-0 left-0 bottom-0 
+        z-50 
+        w-64 bg-[#0D0D12] border-r border-[#1C1C24] flex flex-col justify-between shrink-0
+      `}>
         <div className="p-6">
           <div className="flex items-center gap-3 mb-8">
             <div className="w-10 h-10 bg-gradient-to-tr from-violet-600 to-indigo-600 rounded-xl flex items-center justify-center text-white font-bold shadow-lg shadow-indigo-600/30">
@@ -691,13 +560,13 @@ export default function App() {
           </div>
 
           <nav className="space-y-1">
-            <SidebarButton active={activeTab === 'leads'} onClick={() => setActiveTab('leads')} icon={<ClipboardList size={18} />} label="Leads" />
-            <SidebarButton active={activeTab === 'atendimento'} onClick={() => setActiveTab('atendimento')} icon={<Users size={18} />} label="Atendimento" />
-            <SidebarButton active={activeTab === 'follow_up'} onClick={() => setActiveTab('follow_up')} icon={<Clock size={18} />} label="Follow-up" />
-            <SidebarButton active={activeTab === 'agenda'} onClick={() => setActiveTab('agenda')} icon={<Calendar size={18} />} label="Agenda" />
-            <SidebarButton active={activeTab === 'operadores'} onClick={() => setActiveTab('operadores')} icon={<UserCheck size={18} />} label="Operadores" />
-            <SidebarButton active={activeTab === 'relatorios'} onClick={() => setActiveTab('relatorios')} icon={<TrendingUp size={18} />} label="Relatórios" />
-            <SidebarButton active={activeTab === 'configuracoes'} onClick={() => setActiveTab('configuracoes')} icon={<Settings size={18} />} label="Configurações" />
+            <SidebarButton active={activeTab === 'leads'} onClick={() => { setActiveTab('leads'); setIsSidebarOpen(false); }} icon={<ClipboardList size={18} />} label="Leads" />
+            <SidebarButton active={activeTab === 'atendimento'} onClick={() => { setActiveTab('atendimento'); setIsSidebarOpen(false); }} icon={<Users size={18} />} label="Atendimento" />
+            <SidebarButton active={activeTab === 'follow_up'} onClick={() => { setActiveTab('follow_up'); setIsSidebarOpen(false); }} icon={<Clock size={18} />} label="Follow-up" />
+            <SidebarButton active={activeTab === 'agenda'} onClick={() => { setActiveTab('agenda'); setIsSidebarOpen(false); }} icon={<Calendar size={18} />} label="Agenda" />
+            <SidebarButton active={activeTab === 'operadores'} onClick={() => { setActiveTab('operadores'); setIsSidebarOpen(false); }} icon={<UserCheck size={18} />} label="Operadores" />
+            <SidebarButton active={activeTab === 'relatorios'} onClick={() => { setActiveTab('relatorios'); setIsSidebarOpen(false); }} icon={<TrendingUp size={18} />} label="Relatórios" />
+            <SidebarButton active={activeTab === 'configuracoes'} onClick={() => { setActiveTab('configuracoes'); setIsSidebarOpen(false); }} icon={<Settings size={18} />} label="Configurações" />
           </nav>
         </div>
 
@@ -725,12 +594,20 @@ export default function App() {
       <div className="flex-1 flex flex-col overflow-hidden relative">
         
         {/* HEADER SUPERIOR & ALERTA DO SISTEMA */}
-        <header className="h-20 border-b border-[#1C1C24] bg-[#0A0A0F] px-8 flex justify-between items-center shrink-0">
-          <div>
-            <h2 className="text-lg font-bold text-white flex items-center gap-2">
-              Painel de Triagem Lara
-            </h2>
-            <p className="text-xs text-gray-500">Distribuição operacional em tempo real</p>
+        <header className="h-20 border-b border-[#1C1C24] bg-[#0A0A0F] px-4 md:px-8 flex justify-between items-center shrink-0">
+          <div className="flex items-center gap-3">
+            <button 
+              onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+              className="md:hidden p-2 text-gray-400 hover:text-white rounded-lg bg-gray-800/40 border border-gray-700/50 cursor-pointer"
+            >
+              <Menu size={20} />
+            </button>
+            <div>
+              <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                Painel de Triagem Lara
+              </h2>
+              <p className="text-xs text-gray-500">Distribuição operacional em tempo real</p>
+            </div>
           </div>
 
           {/* ALERTAS DO TOPO DIREITO */}
@@ -1448,6 +1325,17 @@ export default function App() {
                       <div className="flex justify-between"><span>Acamado ou dependente:</span> <span className="text-indigo-400 font-bold">+25 pontos</span></div>
                     </div>
                   </div>
+
+                  <div className="space-y-2">
+                    <h4 className="text-sm font-bold text-white uppercase tracking-wider">Pesos do Score (INSS por Incapacidade)</h4>
+                    <div className="p-4 bg-gray-900/40 border border-gray-800/50 rounded-xl space-y-2 text-xs">
+                      <div className="flex justify-between"><span>Contribuindo atualmente (Segurado ativo):</span> <span className="text-indigo-400 font-bold">+30 pontos</span></div>
+                      <div className="flex justify-between"><span>Já contribuiu no passado (Qualidade de segurado):</span> <span className="text-indigo-400 font-bold">+15 pontos</span></div>
+                      <div className="flex justify-between"><span>Doença ou limitação grave relatada:</span> <span className="text-indigo-400 font-bold">+30 pontos</span></div>
+                      <div className="flex justify-between"><span>Possui laudos médicos:</span> <span className="text-indigo-400 font-bold">+20 pontos</span></div>
+                      <div className="flex justify-between"><span>Sem advogado constituído:</span> <span className="text-indigo-400 font-bold">+20 pontos</span></div>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1583,6 +1471,38 @@ export default function App() {
                         <DetailBlock label="Trabalho Especial/Roça" value={selectedLead.retirement_special_rural || 'Não informado'} />
                         <DetailBlock label="Outros Períodos" value={selectedLead.retirement_other_periods || 'Não informado'} />
                         <DetailBlock label="Documentos em mãos?" value={selectedLead.tem_docs_em_maos !== undefined ? (selectedLead.tem_docs_em_maos ? 'Sim' : 'Não') : 'Não informado'} />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* VÍNCULO COM ADVOGADO ANTERIOR */}
+                  {selectedLead.has_lawyer !== undefined && (
+                    <div className="space-y-4 pt-2">
+                      <h3 className="text-xs font-bold text-sky-400 uppercase tracking-widest">
+                        Vínculo com Advogado Anterior
+                      </h3>
+                      <div className="grid grid-cols-2 gap-4">
+                        <DetailBlock label="Possui Advogado?" value={selectedLead.has_lawyer ? 'Sim' : 'Não'} />
+                        <DetailBlock 
+                          label="Recuperável?" 
+                          value={selectedLead.is_recoverable !== undefined ? (selectedLead.is_recoverable ? 'Sim (Lead Quente!)' : 'Não') : 'Não avaliado'} 
+                        />
+                        {selectedLead.has_lawyer && (
+                          <>
+                            <DetailBlock 
+                              label="Ação Judicial?" 
+                              value={selectedLead.lawyer_has_action === 'justica' ? 'Sim (Justiça)' : (selectedLead.lawyer_has_action === 'inss' ? 'Não (Apenas INSS)' : 'Não informado')} 
+                            />
+                            <DetailBlock 
+                              label="Contrato Assinado?" 
+                              value={selectedLead.lawyer_has_contract !== undefined ? (selectedLead.lawyer_has_contract ? 'Sim' : 'Não') : 'Não informado'} 
+                            />
+                            <DetailBlock 
+                              label="Procuração Assinada?" 
+                              value={selectedLead.lawyer_has_procuracao !== undefined ? (selectedLead.lawyer_has_procuracao ? 'Sim' : 'Não') : 'Não informado'} 
+                            />
+                          </>
+                        )}
                       </div>
                     </div>
                   )}

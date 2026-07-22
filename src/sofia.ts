@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import Groq from 'groq-sdk';
 import OpenAI from 'openai';
+import { calcularScorePrevidenciario } from './lib/score';
 import * as dotenv from 'dotenv';
 
 dotenv.config();
@@ -11,6 +12,15 @@ const STATE_QUESTIONS: Record<string, string[]> = {
   ],
   AWAITING_LAWYER: [
     "Você já tem advogado cuidando do seu caso?"
+  ],
+  LAWYER_CHECK_ACTION: [
+    "Esse advogado já entrou com ação na Justiça ou só deu entrada no INSS?"
+  ],
+  LAWYER_CHECK_CONTRACT: [
+    "Você chegou a assinar contrato com ele?"
+  ],
+  LAWYER_CHECK_PROCURACAO: [
+    "Você assinou procuração pra ele te representar?"
   ],
   AWAITING_AGE: [
     "Qual a sua idade?"
@@ -154,7 +164,11 @@ export class SofiaEngine {
     // 3. Remove introduções de nome comuns
     const intros = [
       "meu nome e o", "meu nome e a", "meu nome e",
+      "meu nome o", "meu nome a", "meu nome",
+      "eu me chamo o", "eu me chamo a", "eu me chamo",
+      "eu chamo o", "eu chamo a", "eu chamo",
       "me chamo o", "me chamo a", "me chamo",
+      "chamo o", "chamo a", "chamo",
       "pode me chamar de", "pode chamar de",
       "aqui e o", "aqui e a", "aqui e",
       "sou o", "sou a", "sou",
@@ -185,7 +199,10 @@ export class SofiaEngine {
     if (words.length < 1 || words.length > 4) return null;
 
     // Lista de palavras proibidas (verbos de ação comuns ou termos de negação)
-    const forbidden = ["nao", "sim", "advogado", "ajuda", "caso", "processo", "inss", "bpc", "loas", "aposentar", "aposentadoria"];
+    const forbidden = [
+      "nao", "sim", "advogado", "ajuda", "caso", "processo", "inss", "bpc", "loas", "aposentar", "aposentadoria",
+      "meu", "minha", "meus", "minhas", "nome", "nomes", "doutora", "doutor", "dra", "dr", "senhor", "senhora"
+    ];
     for (const w of words) {
       if (forbidden.includes(w)) return null;
       if (w.length < 2 && w !== "e") return null; // Evita letras soltas
@@ -407,6 +424,16 @@ export class SofiaEngine {
     return null;
   }
 
+  detectarAutoBeneficiario(text: string): boolean {
+    const cleanText = text.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    return /\b(pra mim mesm[oa]|para mim mesm[oa]|e pra mim|e para mim|sou eu mesm[oa]|sou eu|nao e pra ele|nao e pra ela|nao e pro|o caso e meu|e o meu caso|seria pra mim mesm[oa]|seria para mim mesm[oa]|seria pra mim|seria para mim|sobre mim|pra mim|para mim)\b/i.test(cleanText);
+  }
+
+  detectarPerguntaEndereco(text: string): boolean {
+    const cleanText = text.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    return /\b(onde fica|onde e|endereco|localizacao|onde ficam|onde voces ficam|qual endereco)\b/i.test(cleanText);
+  }
+
   async runExtraction(text: string, currentState?: string): Promise<any> {
     const prompt = `Você é um extrator de dados de texto especializado em triagem previdenciária.
 Sua única tarefa é analisar o texto enviado pelo cliente e extrair todas as informações preenchidas para os campos especificados abaixo.
@@ -418,6 +445,9 @@ Campos a extrair:
 - nome_usuario: (string ou null) O nome próprio do cliente (ex: João, Maria, José). ATENÇÃO: Nunca extraia saudações, gírias ou verbos de saudação como nome próprio (por exemplo, se o cliente enviar "Oi", "Olá", "Fala", "Blz", "Bom dia", "Quero", "Tenho", NUNCA extraia esses termos no campo nome_usuario; retorne null para esses casos).
 - sofrimento_relatado: (string ou null) Se o cliente relatar sofrimento emocional, luto, desespero, perda recente, dor física, limitação ou incapacidade grave para o trabalho (ex: "estou sofrendo muito", "meu marido faleceu", "estou na cama com dor", "estou desesperado", "problema no joelho que não deixa trabalhar", "dor na coluna forte", "depressão grave"). Extraia a frase ou descrição curta do sofrimento/dor/perda/incapacidade/limitação relatado.
 - has_lawyer: (boolean ou null) Se o cliente já possui um advogado para o seu caso (true se tiver, false se disser que não tem, ex: "não tenho", "não tenho advogado", "não", e null se não for mencionado).
+- lawyer_has_action: (string ou null) "justica" se houver ação judicial/processo em juízo, "inss" se for apenas entrada administrativa/INSS ou não houver processo judicial ativo.
+- lawyer_has_contract: (boolean ou null) true se assinou contrato de honorários com o advogado, false se não.
+- lawyer_has_procuracao: (boolean ou null) true se assinou procuração autorizando o advogado a representá-lo, false se não.
 - idade: (string/number ou null) A idade ou ano de nascimento se puder ser deduzida.
 - trabalha_atualmente: (boolean ou null) Se o cliente trabalha hoje em dia. ATENÇÃO: Infira como false automaticamente se o cliente mencionar expressões que indicam diretamente que ele não trabalha ou não tem atividade remunerada (por exemplo: "não tenho renda", "estou desempregado(a)", "estou sem trabalhar", "não tenho como trabalhar", "sou de cama", "não trabalho").
 - esta_contribuindo_atualmente: (boolean ou null) Se o cliente está fazendo contribuições/pagando o INSS atualmente.
@@ -449,7 +479,22 @@ Campos a extrair:
 - retirement_special_rural: (string ou null) Experiência de trabalho na roça (meio rural) ou sob condições insalubres/perigosas (muito ruído, calor, químicos, eletricidade, perigo).
 - retirement_other_periods: (string ou null) Menção a serviço público, militar, escola técnica anterior a 1998, ou menor aprendiz.
 - tem_docs_em_maos: (boolean ou null) Se o cliente menciona possuir carteira de trabalho, CNIS, extratos, carnês ou qualquer documento físico/digital previdenciário em mãos (ex: "estou com a carteira aqui", "tenho os documentos em mãos", "tenho os papéis", "tenho os comprovantes").
+- beneficiario_terceiro: (string ou null) Relação de parentesco do beneficiário se for um terceiro/familiar (ex: "pai", "mãe", "filho", "avó", "esposo"). Se o cliente disser que o caso é para ele mesmo, retorne null.
 - is_off_topic: (boolean ou null) true se a mensagem do cliente NÃO fornece nenhum dado útil para a triagem. Isso inclui: (1) assuntos completamente fora do contexto (receitas, futebol, piadas, política geral), E TAMBÉM (2) reclamações, desabafos ou críticas sobre o sistema INSS/BPC/governo/regras previdenciárias que não informam dados pessoais do cliente (ex: "o BPC não vale nada", "o INSS é uma roubada", "essas regras são injustas", "o governo não ajuda ninguém"). ATENÇÃO: se o cliente desabafa sobre dor, doença ou limitação pessoal, isso NÃO é off-topic — extraia os campos de saúde normalmente e deixe is_off_topic como null.
+
+IMPORTANTE - Mensagens longas e desorganizadas:
+O cliente pode falar de forma indireta, com ironia, desabafo, comentários sobre política/notícias, 
+ou divagações antes de chegar no ponto real, incluindo hesitações e autocorreções no meio da fala 
+transcrita de áudio (ex: "eu não tô afim de, de queee, ééé..."). Ignore comentários retóricos ou 
+irônicos que não pedem resposta literal, e comentários genéricos sobre terceiros que não são o 
+próprio beneficiário nem alguém que o cliente está pleiteando o benefício em nome de (ex: "pegar 
+dinheiro dos rapaz especial" é um comentário de opinião, não uma menção a um terceiro do caso — 
+só marque beneficiario_terceiro se o cliente disser claramente que o benefício é para outra pessoa, 
+como um familiar seu). Extraia os dados factuais reais mencionados (idade, tempo de contribuição, 
+tipo de benefício em dúvida, doença) mesmo que estejam cercados de desabafo, ironia, autocorreção 
+ou assunto colateral (política, notícias, comentários gerais). Se não conseguir identificar nenhum 
+dado extraível com confiança, retorne null nesse campo em vez de inventar ou usar o comentário 
+colateral como se fosse dado real.
 
 Texto a analisar:
 "${text}"
@@ -497,8 +542,32 @@ JSON de retorno:`;
       }
     }
 
+    if (currentState === 'LAWYER_CHECK_ACTION') {
+      if (/\b(justica|judicial|juiz|processo na justica|processo judicial|entrou na justica|justisa|juizo)\b/.test(clean)) {
+        data.lawyer_has_action = 'justica';
+      } else if (/\b(inss|so inss|administrativo|so deu entrada|nao entrou|so no inss)\b/.test(clean)) {
+        data.lawyer_has_action = 'inss';
+      }
+    }
+
+    if (currentState === 'LAWYER_CHECK_CONTRACT') {
+      if (/\b(nao|assinei nao|nao assinei|nenhum|nunca|nao assinei nada)\b/.test(clean)) {
+        data.lawyer_has_contract = false;
+      } else if (/\b(sim|assinei|ja assinei|contrato assinado|assinado)\b/.test(clean)) {
+        data.lawyer_has_contract = true;
+      }
+    }
+
+    if (currentState === 'LAWYER_CHECK_PROCURACAO') {
+      if (/\b(nao|assinei nao|nao assinei|nenhum|nunca|nao assinei nada)\b/.test(clean)) {
+        data.lawyer_has_procuracao = false;
+      } else if (/\b(sim|assinei|ja assinei|procuracao assinada|assinado)\b/.test(clean)) {
+        data.lawyer_has_procuracao = true;
+      }
+    }
+
     // 2. Idade (AWAITING_AGE)
-    if (currentState === 'AWAITING_AGE' || clean.includes("anos") || /\b\d{1,2}\b/.test(clean)) {
+    if (currentState === 'AWAITING_AGE') {
       const match = clean.match(/\b\d{1,2}\b/);
       if (match) {
         data.idade = parseInt(match[0], 10);
@@ -536,7 +605,7 @@ JSON de retorno:`;
       ) {
         data.bpc_renda_familiar = false;
         data.bpc_quem_renda = 'nenhuma';
-      } else if (/\b(sim|recebo|ganho|bolsa|pensao|aposentadoria|bpc|loas|ajuda|salario)\b/.test(clean)) {
+      } else if (/\b(sim|recebo|recebe|recebem|receber|ganho|ganha|ganham|ganhar|trabalha|trabalham|trabalhar|bolsa|pensao|aposentadoria|aposentado|aposentada|pensionista|bpc|loas|ajuda|salario|renda|auxilio|bico|bicos)\b/.test(clean)) {
         data.bpc_renda_familiar = true;
       }
     }
@@ -589,10 +658,21 @@ JSON de retorno:`;
   async runHybridExtraction(text: string, currentState?: string): Promise<any> {
     const codeResult = this.interpretador_codigo(text, currentState);
     // Lista de estados que o interpretador_codigo já resolve com segurança sem precisar de IA
-    const estadosResolvidosPorCodigo = ['AWAITING_NAME', 'AWAITING_LAWYER', 'AWAITING_AGE', 'BPC_AWAITING_HOUSEHOLD_INCOME', 'BPC_AWAITING_HOME_STATUS', 'BPC_AWAITING_CADUNICO', 'BPC_AWAITING_HOUSEHOLD'];
+    const estadosResolvidosPorCodigo = [
+      'AWAITING_NAME', 'AWAITING_LAWYER', 'AWAITING_AGE', 
+      'BPC_AWAITING_HOUSEHOLD_INCOME', 'BPC_AWAITING_HOME_STATUS', 
+      'BPC_AWAITING_CADUNICO', 'BPC_AWAITING_HOUSEHOLD',
+      'LAWYER_CHECK_ACTION', 'LAWYER_CHECK_CONTRACT', 'LAWYER_CHECK_PROCURACAO'
+    ];
     let needsFallback = true; // Por padrão, SEMPRE usa IA como rede de segurança
-    if (currentState === 'AWAITING_NAME' && !codeResult.nome_usuario) needsFallback = true;
+    if (currentState === 'AWAITING_NAME') {
+      const wordsCount = text.trim().split(/\s+/).length;
+      if (wordsCount > 1 || !codeResult.nome_usuario) needsFallback = true;
+    }
     if (currentState === 'AWAITING_LAWYER' && codeResult.has_lawyer === undefined) needsFallback = true;
+    if (currentState === 'LAWYER_CHECK_ACTION' && !codeResult.lawyer_has_action) needsFallback = true;
+    if (currentState === 'LAWYER_CHECK_CONTRACT' && codeResult.lawyer_has_contract === undefined) needsFallback = true;
+    if (currentState === 'LAWYER_CHECK_PROCURACAO' && codeResult.lawyer_has_procuracao === undefined) needsFallback = true;
     if (currentState === 'AWAITING_AGE' && !codeResult.idade) needsFallback = true;
     if (currentState === 'BPC_AWAITING_HOUSEHOLD_INCOME' && codeResult.bpc_renda_familiar === undefined) needsFallback = true;
     if (currentState === 'BPC_AWAITING_HOME_STATUS' && !codeResult.bpc_casa_alugada_propria) needsFallback = true;
@@ -600,13 +680,30 @@ JSON de retorno:`;
     if (currentState === 'BPC_AWAITING_HOUSEHOLD' && !codeResult.bpc_pessoas_casa) needsFallback = true;
     // Só marca como resolvido por código (false) se o estado está na lista segura E o código de fato extraiu o dado
     if (estadosResolvidosPorCodigo.includes(currentState || '')) {
-      if (currentState === 'AWAITING_NAME' && codeResult.nome_usuario) needsFallback = false;
+      if (currentState === 'AWAITING_NAME') {
+        const wordsCount = text.trim().split(/\s+/).length;
+        if (wordsCount <= 1 && codeResult.nome_usuario) needsFallback = false;
+      }
       if (currentState === 'AWAITING_LAWYER' && codeResult.has_lawyer !== undefined) needsFallback = false;
+      if (currentState === 'LAWYER_CHECK_ACTION' && codeResult.lawyer_has_action) needsFallback = false;
+      if (currentState === 'LAWYER_CHECK_CONTRACT' && codeResult.lawyer_has_contract !== undefined) needsFallback = false;
+      if (currentState === 'LAWYER_CHECK_PROCURACAO' && codeResult.lawyer_has_procuracao !== undefined) needsFallback = false;
       if (currentState === 'AWAITING_AGE' && codeResult.idade) needsFallback = false;
       if (currentState === 'BPC_AWAITING_HOUSEHOLD_INCOME' && codeResult.bpc_renda_familiar !== undefined) needsFallback = false;
       if (currentState === 'BPC_AWAITING_HOME_STATUS' && codeResult.bpc_casa_alugada_propria) needsFallback = false;
       if (currentState === 'BPC_AWAITING_CADUNICO' && codeResult.bpc_cad_unico !== undefined) needsFallback = false;
       if (currentState === 'BPC_AWAITING_HOUSEHOLD' && codeResult.bpc_pessoas_casa) needsFallback = false;
+    }
+
+    // Se a mensagem for longa (mais de 20 palavras), força fallback para IA para capturar dados voluntários extras
+    const wordCount = text.trim().split(/\s+/).length;
+    if (wordCount > 20) {
+      needsFallback = true;
+    }
+
+    // Se a mensagem contém auto-correção de beneficiário, força fallback para IA atualizar o campo beneficiario_terceiro corretamente
+    if (this.detectarAutoBeneficiario(text)) {
+      needsFallback = true;
     }
 
     if (!needsFallback) {
@@ -661,10 +758,27 @@ JSON de retorno:`;
 
     // 1. Extração prévia de campos do texto antes de qualquer coisa (bloco consolidado)
     let extractedData: any = {};
+    if (session?.user_data?.followup_sent) {
+      extractedData.followup_sent = false;
+      extractedData.followup_sent_at = null;
+    }
+
+    if (this.detectarAutoBeneficiario(text)) {
+      console.log(`[EXTRAÇÃO] Correção para auto-beneficiário detectada no texto: "${text}". Resetando beneficiario_terceiro.`);
+      extractedData.beneficiario_terceiro = null;
+      extractedData.beneficiario_ja_confirmado = true; // Trava para sempre
+    }
 
     // Detecta beneficiário terceiro em qualquer mensagem, antes de tudo (código puro)
     let beneficiarioTerceiro = session?.user_data?.beneficiario_terceiro || null;
-    if (!beneficiarioTerceiro) {
+    if (extractedData.beneficiario_terceiro === null) {
+      beneficiarioTerceiro = null;
+    }
+
+    // Só tenta detectar um terceiro do zero se não estiver travado E estiver nas etapas de introdução
+    const fsmState = session?.user_data?.state_fsm;
+    const isInitialState = !fsmState || fsmState === 'AWAITING_NAME' || fsmState === 'AWAITING_LAWYER';
+    if (!beneficiarioTerceiro && !session?.user_data?.beneficiario_ja_confirmado && isInitialState) {
       const detectedFamiliar = this.detectarBeneficiarioTerceiro(text);
       if (detectedFamiliar) {
         beneficiarioTerceiro = detectedFamiliar;
@@ -675,15 +789,19 @@ JSON de retorno:`;
     if (!isGreeting) {
       const currentState = session?.user_data?.state_fsm || undefined;
 
-      console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 3. Conteúdo enviado ao extractor: "${text}" (currentState: "${currentState}")`);
-      if (isAudio) {
-        console.log(`[INSTRUMENTAÇÃO ÁUDIO] [${timestamp}] [Lead: ${phone}] 4. Resultado enviado ao extractor: "${text}"`);
+      if (this.detectarPerguntaEndereco(text)) {
+        console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 📍 Endereço detectado. Pulando extração de dados.`);
+      } else {
+        console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 3. Conteúdo enviado ao extractor: "${text}" (currentState: "${currentState}")`);
+        if (isAudio) {
+          console.log(`[INSTRUMENTAÇÃO ÁUDIO] [${timestamp}] [Lead: ${phone}] 4. Resultado enviado ao extractor: "${text}"`);
+        }
+        const rawExtracted = await this.runHybridExtraction(text, currentState);
+        extractedData = {
+          ...extractedData,
+          ...rawExtracted
+        };
       }
-      const rawExtracted = await this.runHybridExtraction(text, currentState);
-      extractedData = {
-        ...extractedData,
-        ...rawExtracted
-      };
 
       if (session?.user_data?.beneficiario_terceiro && session?.user_data?.idade !== undefined && session?.user_data?.idade !== null) {
         delete extractedData.idade;
@@ -714,14 +832,14 @@ JSON de retorno:`;
       console.log("📝 Dados extraídos previamente:", JSON.stringify(extractedData));
     }
 
-    const currentHasLawyer = session && (
+    const currentHasLawyerAndUnrecoverable = session && (
       session.user_data?.has_lawyer === true ||
       session.user_data?.has_lawyer === 'true' ||
       extractedData.has_lawyer === true ||
       extractedData.has_lawyer === 'true'
-    );
+    ) && session.user_data?.is_recoverable === false;
 
-    if (currentHasLawyer) {
+    if (currentHasLawyerAndUnrecoverable) {
       // Se já possui advogado, encerra de forma educada e definitiva sem chamar a IA
       const nome = session.user_data?.nome_usuario || 'amigo(a)';
       // Garante que o status_final fique salvo como com_advogado e has_lawyer como true
@@ -913,6 +1031,7 @@ JSON de retorno:`;
       if (resolved.fluxo_ativo) {
         updatedUserData.fluxo_ativo = resolved.fluxo_ativo;
       }
+      updatedUserData.score_total = calcularScorePrevidenciario(updatedUserData);
       console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 5. Estado calculado pela FSM (pré-AI): state="${resolved.state}", fluxo="${resolved.fluxo_ativo || 'N/A'}"`);
 
       // Se houver novos dados extraídos ou o histórico foi reiniciado, salva no banco de dados imediatamente
@@ -944,7 +1063,7 @@ JSON de retorno:`;
 
   private async handleStepWithAI(session: any, text: string) {
     const { step, user_data, phone } = session;
-    const history = user_data?.history || [];
+    let history = user_data?.history || [];
 
     // Resolve a FSM determinística para garantir que estamos no estado correto
     const resolved = this.resolveFSMState(user_data);
@@ -1044,6 +1163,113 @@ JSON de retorno:`;
       user_data.esclarecimento_pendente = esclarecimento;
     }
 
+    // GUARDA DETERMINÍSTICO PARA ENDEREÇO
+    if (this.detectarPerguntaEndereco(text)) {
+      const nome = user_data.nome_usuario ? `, ${user_data.nome_usuario}` : "";
+      const familiar = user_data.beneficiario_terceiro;
+      
+      // Pega a pergunta correspondente ao estado atual
+      let dryQuestion = "";
+      if (stateFsm === 'AWAITING_NAME') {
+        dryQuestion = "Boa tarde! Tudo bem?\nMe chamo Lara, sou atendente do escritório da Dra. Mônica Lucioli. Com quem eu falo?";
+      } else if (resolved.fluxo_ativo === 'EXCECAO') {
+        dryQuestion = EXCECAO_QUESTIONS[Math.floor(Math.random() * EXCECAO_QUESTIONS.length)];
+      } else {
+        let questionsList = STATE_QUESTIONS[stateFsm];
+        if (stateFsm === 'BPC_AWAITING_HOUSEHOLD_INCOME') {
+          const moraSozinho = user_data.bpc_pessoas_casa && (
+            String(user_data.bpc_pessoas_casa).toLowerCase().includes('sozinh') ||
+            String(user_data.bpc_pessoas_casa).toLowerCase().includes('moro só') ||
+            String(user_data.bpc_pessoas_casa).toLowerCase().includes('moro so') ||
+            String(user_data.bpc_pessoas_casa).toLowerCase().includes('apenas eu') ||
+            String(user_data.bpc_pessoas_casa).toLowerCase().includes('somente eu') ||
+            String(user_data.bpc_pessoas_casa).toLowerCase() === 'eu' ||
+            String(user_data.bpc_pessoas_casa).toLowerCase().includes('1 pessoa') ||
+            String(user_data.bpc_pessoas_casa).toLowerCase().includes('uma pessoa')
+          );
+          if (moraSozinho) {
+            questionsList = ["Você recebe algum dinheiro? Bolsa família, pensão, aposentadoria ou alguma outra renda?"];
+          }
+        }
+        dryQuestion = questionsList ? questionsList[Math.floor(Math.random() * questionsList.length)] : "";
+      }
+
+      // Se houver familiar, adapta
+      if (familiar) {
+        const fem = ['filha', 'esposa', 'mãe', 'neta', 'irmã', 'avó', 'tia', 'sogra', 'sobrinha', 'nora', 'enteada', 'companheira'].includes(familiar.toLowerCase());
+        const art = fem ? 'A sua' : 'O seu';
+        const artLC = fem ? 'sua' : 'seu';
+        const prep = fem ? 'da' : 'do';
+        const pron = fem ? 'ela' : 'ele';
+        const pronPoss = fem ? 'dela' : 'dele';
+
+        if (stateFsm === 'AWAITING_LAWYER') {
+          dryQuestion = `${art} ${familiar} já tem advogado cuidando do caso?`;
+        } else if (stateFsm === 'LAWYER_CHECK_ACTION') {
+          dryQuestion = `Esse advogado já entrou com ação na Justiça em nome ${prep} ${artLC} ${familiar} ou só deu entrada no INSS?`;
+        } else if (stateFsm === 'LAWYER_CHECK_CONTRACT') {
+          dryQuestion = `${art} ${familiar} chegou a assinar contrato com esse advogado?`;
+        } else if (stateFsm === 'LAWYER_CHECK_PROCURACAO') {
+          dryQuestion = `${art} ${familiar} assinou procuração para esse advogado representar ${pron}?`;
+        } else if (stateFsm === 'AWAITING_AGE') {
+          dryQuestion = `Qual a idade ${prep} ${artLC} ${familiar}?`;
+        } else if (stateFsm === 'AWAITING_DISEASE') {
+          dryQuestion = `${art} ${familiar} tem alguma doença atualmente?`;
+        } else if (stateFsm === 'AWAITING_DISABILITY') {
+          dryQuestion = `${art} ${familiar} tem alguma deficiência?`;
+        } else if (stateFsm === 'AWAITING_TOTAL_CONTRIBUTION') {
+          dryQuestion = `${art} ${familiar} já trabalhou de carteira assinada ou contribuiu para o INSS?`;
+        } else if (stateFsm === 'AWAITING_CURRENT_CONTRIBUTION') {
+          dryQuestion = `Como está a rotina de trabalho ${prep} ${artLC} ${familiar} hoje em dia? ${pron.toUpperCase()} está conseguindo trabalhar?`;
+        } else if (stateFsm === 'AWAITING_LAST_CONTRIBUTION_TIME') {
+          dryQuestion = `Tem quanto tempo que ${art.toLowerCase()} ${familiar} se afastou ou parou de trabalhar?`;
+        } else if (stateFsm === 'INSS_AWAITING_EMPLOYMENT_TYPE') {
+          dryQuestion = `Como ${art.toLowerCase()} ${familiar} contribuía para o INSS? Era por carteira assinada, carnê ou MEI?`;
+        } else if (stateFsm === 'INSS_AWAITING_LAST_CONTRIBUTION') {
+          dryQuestion = `Tem quanto tempo que ${art.toLowerCase()} ${familiar} se afastou? Foi em que ano?`;
+        } else if (stateFsm === 'INSS_AWAITING_REPORTS') {
+          dryQuestion = `${art} ${familiar} possui exames, receitas ou laudos médicos recentes?`;
+        } else if (stateFsm === 'BPC_AWAITING_HOUSEHOLD') {
+          dryQuestion = `Quem mora com ${art.toLowerCase()} ${familiar} na casa ${pronPoss} hoje?`;
+        } else if (stateFsm === 'BPC_AWAITING_HOUSEHOLD_INCOME') {
+          dryQuestion = `Das pessoas que moram com ${art.toLowerCase()} ${familiar}, alguém trabalha ou recebe algum dinheiro?`;
+        } else if (stateFsm === 'BPC_AWAITING_HOME_STATUS') {
+          dryQuestion = `A casa ${prep} ${artLC} ${familiar} é própria, alugada ou cedida?`;
+        } else if (stateFsm === 'BPC_AWAITING_CADUNICO') {
+          dryQuestion = `${art} ${familiar} possui CadÚnico atualizado?`;
+        }
+      }
+
+      // Se o estado for AWAITING_AGE e is_recoverable for true, usa a pergunta otimizada comercialmente!
+      const transitionAlreadySent = history.some((h: any) => h.role === 'assistant' && h.content.includes("é bem comum o pedido ficar só no INSS mesmo"));
+      if (stateFsm === 'AWAITING_AGE' && user_data.is_recoverable === true && !transitionAlreadySent) {
+        if (familiar) {
+          const fem = ['filha', 'esposa', 'mãe', 'neta', 'irmã', 'avó', 'tia', 'sogra', 'sobrinha', 'nora', 'enteada', 'companheira'].includes(familiar.toLowerCase());
+          const art = fem ? 'a sua' : 'o seu';
+          const artLC = fem ? 'sua' : 'seu';
+          const prep = fem ? 'da' : 'do';
+          dryQuestion = `Entendi${nome}. Nesse caso é bem comum o pedido ficar só no INSS mesmo e acabar demorando ou sendo negado.\n\nAqui no escritório a gente analisa justamente se existe uma forma mais rápida ou segura de conseguir esse benefício para ${art} ${familiar}.\n\nPra eu te orientar melhor, qual a idade ${prep} ${artLC} ${familiar}?`;
+        } else {
+          dryQuestion = `Entendi${nome}. Nesse caso é bem comum o pedido ficar só no INSS mesmo e acabar demorando ou sendo negado.\n\nAqui no escritório a gente analisa justamente se existe uma forma mais rápida ou segura de conseguir esse benefício.\n\nPra eu te orientar melhor, qual a sua idade?`;
+        }
+      }
+
+      const reply = `Nosso escritório fica localizado na Avenida Cardoso Saraiva, 688, Matias Barbosa MG. Atendimento presencial em Matias e Juiz de Fora.\n\nAtendemos on-line em todo Brasil.\n\n${dryQuestion}`;
+      const newHistory = [...history, { role: 'user', content: text }, { role: 'assistant', content: reply }];
+
+      await this.supabase.rpc('save_session_data', {
+        p_phone: phone,
+        p_step: session?.step || null,
+        p_user_data_updates: {
+          history: newHistory,
+          state_fsm: stateFsm
+        }
+      });
+
+      console.log(`[INSTRUMENTAÇÃO] [${new Date().toISOString()}] [Lead: ${phone}] 9. Resposta de endereço enviada: "${reply}"`);
+      return reply;
+    }
+
     // GUARDA DETERMINÍSTICO 0: Se o estado calculado for FINISHED, encerra deterministamente sem chamar a IA
     if (stateFsm === 'FINISHED') {
       const finalReply = "Com base no que você me contou nossa equipe vai analisar melhor o seu caso. Assim que possível entraremos em contato novamente";
@@ -1063,6 +1289,40 @@ JSON de retorno:`;
 
       console.log(`[INSTRUMENTAÇÃO] [${new Date().toISOString()}] [Lead: ${phone}] 9. Resposta final enviada ao cliente (FSM FINISHED): "${finalReply}"`);
       return finalReply;
+    }
+
+    // GUARDA DETERMINÍSTICO PARA RETORNO DO SUB-FLUXO DE ADVOGADO
+    const transitionAlreadySent = history.some((h: any) => h.role === 'assistant' && h.content.includes("é bem comum o pedido ficar só no INSS mesmo"));
+    if (stateFsm === 'AWAITING_AGE' && user_data.is_recoverable === true && !transitionAlreadySent) {
+      const nome = user_data.nome_usuario ? `, ${user_data.nome_usuario}` : "";
+      const familiar = user_data.beneficiario_terceiro;
+      let reply = "";
+      if (familiar) {
+        const fem = ['filha', 'esposa', 'mãe', 'neta', 'irmã', 'avó', 'tia', 'sogra', 'sobrinha', 'nora', 'enteada', 'companheira'].includes(familiar.toLowerCase());
+        const art = fem ? 'a sua' : 'o seu';
+        const artLC = fem ? 'sua' : 'seu';
+        const prep = fem ? 'da' : 'do';
+        reply = `Entendi${nome}. Nesse caso é bem comum o pedido ficar só no INSS mesmo e acabar demorando ou sendo negado.\n\nAqui no escritório a gente analisa justamente se existe uma forma mais rápida ou segura de conseguir esse benefício para ${art} ${familiar}.\n\nPra eu te orientar melhor, qual a idade ${prep} ${artLC} ${familiar}?`;
+      } else {
+        reply = `Entendi${nome}. Nesse caso é bem comum o pedido ficar só no INSS mesmo e acabar demorando ou sendo negado.\n\nAqui no escritório a gente analisa justamente se existe uma forma mais rápida ou segura de conseguir esse benefício.\n\nPra eu te orientar melhor, qual a sua idade?`;
+      }
+
+      const newHistory = [...history, { role: 'user', content: text }, { role: 'assistant', content: reply }];
+      
+      const updates = {
+        history: newHistory,
+        state_fsm: 'AWAITING_AGE',
+        score_total: calcularScorePrevidenciario(user_data)
+      };
+
+      await this.supabase.rpc('save_session_data', {
+        p_phone: phone,
+        p_step: 'welcome',
+        p_user_data_updates: updates
+      });
+
+      console.log(`[INSTRUMENTAÇÃO] [${new Date().toISOString()}] [Lead: ${phone}] 9. Resposta do sub-fluxo de advogado enviada (bypassing LLM): "${reply}"`);
+      return reply;
     }
 
     // GUARDA DETERMINÍSTICO 1: Força o Passo 2 sem chamar a IA apenas se o texto de fato se parecer com um nome próprio real
@@ -1085,6 +1345,7 @@ JSON de retorno:`;
         
         // Atualiza variáveis locais para que a chamada da IA prossiga com os dados salvos
         user_data.history = newHistory;
+        history = newHistory;
         user_data.nome_usuario = nome;
         user_data.state_fsm = 'AWAITING_LAWYER';
     }
@@ -1112,6 +1373,7 @@ JSON de retorno:`;
 
       // Atualiza variáveis locais para que a chamada do Gemini processe o histórico correto
       user_data.history = newHistory;
+      history = newHistory;
       user_data.contexto_offtopic = true;
       user_data.is_off_topic = null;
     }
@@ -1170,6 +1432,12 @@ JSON de retorno:`;
 
       if (stateFsm === 'AWAITING_LAWYER') {
         dryQuestion = `${art} ${familiar} já tem advogado cuidando do caso?`;
+      } else if (stateFsm === 'LAWYER_CHECK_ACTION') {
+        dryQuestion = `Esse advogado já entrou com ação na Justiça em nome ${prep} ${artLC} ${familiar} ou só deu entrada no INSS?`;
+      } else if (stateFsm === 'LAWYER_CHECK_CONTRACT') {
+        dryQuestion = `${art} ${familiar} chegou a assinar contrato com esse advogado?`;
+      } else if (stateFsm === 'LAWYER_CHECK_PROCURACAO') {
+        dryQuestion = `${art} ${familiar} assinou procuração para esse advogado representar ${pron}?`;
       } else if (stateFsm === 'AWAITING_AGE') {
         dryQuestion = `Qual a idade ${prep} ${artLC} ${familiar}?`;
       } else if (stateFsm === 'AWAITING_DISEASE') {
@@ -1204,6 +1472,12 @@ JSON de retorno:`;
       contextStr = "Contexto: Início de contato, pergunte o nome de forma simples.";
     } else if (stateFsm === 'AWAITING_LAWYER') {
       contextStr = "Contexto: Cliente com possível BPC ou benefício, investigando se já tem advogado, tom ético e direto.";
+    } else if (stateFsm === 'LAWYER_CHECK_ACTION') {
+      contextStr = "Contexto: Pergunte se o advogado anterior já entrou com processo na Justiça ou se o caso está apenas no INSS (via administrativa).";
+    } else if (stateFsm === 'LAWYER_CHECK_CONTRACT') {
+      contextStr = "Contexto: Pergunte de forma muito curta e educada se ele chegou a assinar algum contrato escrito de honorários com esse advogado anterior.";
+    } else if (stateFsm === 'LAWYER_CHECK_PROCURACAO') {
+      contextStr = "Contexto: Pergunte se ele chegou a assinar alguma procuração autorizando o advogado anterior a representá-lo.";
     } else if (stateFsm === 'AWAITING_AGE') {
       contextStr = "Contexto: Perguntando a idade de forma super direta.";
     } else if (stateFsm === 'BPC_AWAITING_HOUSEHOLD_INCOME') {
@@ -1571,173 +1845,17 @@ Gere a resposta da Lara (retorne APENAS o texto reescrito da pergunta base, sem 
       delete user_data.contexto_offtopic;
     }
 
-    // Calcular pontuação de lead baseada na fórmula unificada (escala 0-100)
-    let scoreValue = 0;
-    
-    // Helper parsers for early detection
-    const parseAgeLocal = (v: any) => {
-      if (!v) return 0;
-      const match = String(v).match(/\d+/);
-      return match ? parseInt(match[0], 10) : 0;
-    };
-    const parseContribLocal = (v: any) => {
-      if (!v) return 0;
-      const match = String(v).match(/\d+/);
-      return match ? parseInt(match[0], 10) : 0;
-    };
+    // Calcular pontuação de lead baseada na lógica centralizada (escala 0-100)
+    const historyWithCurrentText = [
+      ...history,
+      { role: 'user', content: text }
+    ];
+    const score_percent = calcularScorePrevidenciario({
+      ...user_data,
+      history: historyWithCurrentText
+    });
 
-    const ageNumForDetect = parseAgeLocal(user_data?.idade);
-    const contribYearsForDetect = parseContribLocal(
-      user_data?.inss_tempo_carteira ||
-      user_data?.tempo_contribuicao
-    );
-    const hasDiseaseForDetect = user_data?.tem_doenca_ou_limitacao === true;
-
-    const hasAposeText = history.some((h: any) => 
-      String(h.content || "").toLowerCase().includes("aposentar") || 
-      String(h.content || "").toLowerCase().includes("aposentadoria")
-    ) || text.toLowerCase().includes("aposentar") || text.toLowerCase().includes("aposentadoria");
-
-    const isAposentadoria = (
-      user_data?.fluxo_ativo === 'APOSENTADORIA' ||
-      (
-        user_data?.fluxo_ativo !== 'BPC_IDOSO' &&
-        user_data?.fluxo_ativo !== 'BPC_DEFICIENTE' &&
-        user_data?.ja_contribuiu !== false &&
-        ((ageNumForDetect >= 55 || contribYearsForDetect >= 15) || hasAposeText) &&
-        !hasDiseaseForDetect
-      )
-    );
-    
-    if (isAposentadoria) {
-      // 1. Tempo de Contribuição relevante
-      const parseContrib = (v: any) => {
-        if (!v) return 0;
-        const match = String(v).match(/\d+/);
-        return match ? parseInt(match[0], 10) : 0;
-      };
-      const contribYears = parseContrib(
-        user_data?.inss_tempo_carteira ||
-        user_data?.tempo_contribuicao
-      );
-      if (contribYears >= 28) {
-        scoreValue += 40;
-      } else if (contribYears >= 15 && contribYears <= 27) {
-        scoreValue += 25;
-      }
-
-      // 2. Idade
-      const parseAge = (v: any) => {
-        if (!v) return 0;
-        const match = String(v).match(/\d+/);
-        return match ? parseInt(match[0], 10) : 0;
-      };
-      const ageNum = parseAge(user_data?.idade);
-      if (ageNum >= 60) {
-        scoreValue += 20;
-      } else if (ageNum >= 55 && ageNum <= 59) {
-        scoreValue += 15;
-      }
-
-      // 3. Sem advogado
-      const hasLawyer = user_data?.has_lawyer === true;
-      if (!hasLawyer) {
-        scoreValue += 15;
-      }
-
-      // 4. Carteira assinada
-      const workHistory = String(
-        user_data?.retirement_work_history ||
-        user_data?.inss_como_contribuiu ||
-        ""
-      ).toLowerCase();
-      if (workHistory.includes('carteira') || workHistory.includes('assinado') || workHistory.includes('registro')) {
-        scoreValue += 10;
-      }
-
-      // 5. Trabalho especial ou rural
-      const specialRural = String(
-        user_data?.retirement_special_rural ||
-        ""
-      ).toLowerCase();
-      const hasSpecial = (
-        specialRural.includes('especial') ||
-        specialRural.includes('insalubre') ||
-        specialRural.includes('perigo') ||
-        specialRural.includes('ruido') ||
-        specialRural.includes('quimico') ||
-        specialRural.includes('calor') ||
-        specialRural.includes('eletricidade')
-      );
-      const hasRural = (
-        specialRural.includes('rural') ||
-        specialRural.includes('roça') ||
-        specialRural.includes('campo') ||
-        specialRural.includes('lavoura') ||
-        specialRural.includes('colono')
-      );
-      if (hasSpecial || hasRural) {
-        scoreValue += 20;
-      }
-
-      // 6. Documentos em mãos
-      const hasDocs = user_data?.tem_docs_em_maos === true;
-      if (hasDocs) {
-        scoreValue += 10;
-      }
-    } else {
-      // 1. Idade >= 65 anos: +40 pts
-      const parseAge = (v: any) => {
-        if (!v) return 0;
-        const match = String(v).match(/\d+/);
-        return match ? parseInt(match[0], 10) : 0;
-      };
-      const ageNum = parseAge(user_data?.idade);
-      if (ageNum >= 65) scoreValue += 40;
-
-      // 2. Nunca contribuiu: +20 pts
-      const neverContrib = user_data?.ja_contribuiu === false ||
-                           String(user_data?.inss_tempo_carteira).toLowerCase() === 'nenhum' ||
-                           String(user_data?.tempo_parou_contribuir).toLowerCase() === 'nunca' ||
-                           String(user_data?.inss_ultima_contribuicao).toLowerCase().includes('não contribuiu');
-      if (neverContrib) scoreValue += 20;
-
-      // 3. Renda per capita baixa: +20 pts
-      const rendaVal = String(user_data?.bpc_quem_renda || "").toLowerCase();
-      const isLowIncome = user_data?.has_no_income === true || 
-                          user_data?.sem_renda === true ||
-                          rendaVal.includes("nenhum") || 
-                          rendaVal.includes("ninguem") || 
-                          rendaVal.includes("sem renda") || 
-                          rendaVal.includes("não tem") ||
-                          rendaVal.includes("não possui") ||
-                          (rendaVal.match(/\d+/) && parseInt((rendaVal.match(/\d+/) || ["0"])[0]) <= 706);
-      if (isLowIncome) scoreValue += 20;
-
-      // 4. Mora sozinho/família baixa renda: +10 pts
-      const moraSozinhoOuBaixaRenda = String(user_data?.bpc_pessoas_casa).toLowerCase().includes("sozinh") ||
-                                      user_data?.bpc_pessoas_casa === 1 ||
-                                      user_data?.bpc_pessoas_casa === '1' ||
-                                      isLowIncome;
-      if (moraSozinhoOuBaixaRenda) scoreValue += 10;
-
-      // 5. CadÚnico ativo: +10 pts
-      const cadUnicoAtivo = user_data?.bpc_cad_unico === true || user_data?.has_cad_unico === true;
-      if (cadUnicoAtivo) scoreValue += 10;
-
-      // 6. Doença ou limitação grave: +15 pts
-      if (user_data?.tem_doenca_ou_limitacao === true) scoreValue += 15;
-
-      // 7. Deficiência: +20 pts
-      if (user_data?.tem_deficiencia === true) scoreValue += 20;
-
-      // 8. Acamado ou dependente: +25 pts
-      if (user_data?.is_bedridden === true) scoreValue += 25;
-    }
-
-    let score_percent = Math.min(100, scoreValue);
-    if (user_data?.has_lawyer === true) {
-      score_percent = 0;
+    if (user_data?.has_lawyer === true && user_data?.is_recoverable !== true) {
       user_data.status_final = 'com_advogado';
     }
 
@@ -1862,6 +1980,15 @@ Gere a resposta da Lara (retorne APENAS o texto reescrito da pergunta base, sem 
   resolveFSMState(userData: any): { state: string, fluxo_ativo?: string } {
     if (!userData) return { state: 'AWAITING_NAME' };
 
+    // --- CORREÇÃO DE SEGURANÇA SE A AUTO-CORREÇÃO OCORREU ---
+    // Se o histórico contém frases explícitas de auto-correção, garante que o beneficiário seja redefinido para null
+    const history = userData.history || [];
+    const lastUserMsg = [...history].reverse().find((h: any) => h.role === 'user')?.content || "";
+    if (this.detectarAutoBeneficiario(lastUserMsg)) {
+      userData.beneficiario_terceiro = null;
+      userData.beneficiario_ja_confirmado = true;
+    }
+
     // --- AUTO-INFERÊNCIAS ---
     let ageNum = this.parseNumber(userData.idade);
 
@@ -1927,7 +2054,27 @@ Gere a resposta da Lara (retorne APENAS o texto reescrito da pergunta base, sem 
       return { state: 'AWAITING_LAWYER', fluxo_ativo: userData.fluxo_ativo };
     }
     if (userData.has_lawyer === true || userData.has_lawyer === 'true') {
-      return { state: 'FINISHED', fluxo_ativo: userData.fluxo_ativo };
+      if (userData.lawyer_has_action === undefined || userData.lawyer_has_action === null || String(userData.lawyer_has_action).trim() === '') {
+        return { state: 'LAWYER_CHECK_ACTION', fluxo_ativo: userData.fluxo_ativo };
+      }
+      if (userData.lawyer_has_contract === undefined || userData.lawyer_has_contract === null) {
+        return { state: 'LAWYER_CHECK_CONTRACT', fluxo_ativo: userData.fluxo_ativo };
+      }
+      if (userData.lawyer_has_procuracao === undefined || userData.lawyer_has_procuracao === null) {
+        return { state: 'LAWYER_CHECK_PROCURACAO', fluxo_ativo: userData.fluxo_ativo };
+      }
+
+      const hasAction = userData.lawyer_has_action === 'justica' || userData.lawyer_has_action === true || userData.lawyer_has_action === 'true';
+      const hasContract = userData.lawyer_has_contract === true || userData.lawyer_has_contract === 'true';
+      const hasProcuracao = userData.lawyer_has_procuracao === true || userData.lawyer_has_procuracao === 'true';
+
+      if (hasAction && hasContract && hasProcuracao) {
+        userData.is_recoverable = false;
+        userData.status_final = 'com_advogado';
+        return { state: 'FINISHED', fluxo_ativo: userData.fluxo_ativo };
+      } else {
+        userData.is_recoverable = true;
+      }
     }
 
     // 3. Validação da Idade
