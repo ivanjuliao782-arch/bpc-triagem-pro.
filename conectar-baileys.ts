@@ -6,6 +6,7 @@ import makeWASocket, {
     normalizeMessageContent
 } from '@whiskeysockets/baileys';
 import { useSupabaseAuthState } from './src/lib/useSupabaseAuthState';
+import { supabase } from './src/lib/supabase';
 import { Boom } from '@hapi/boom';
 import qrcode from 'qrcode-terminal';
 import { SofiaEngine } from './src/sofia';
@@ -134,6 +135,15 @@ async function connectToWhatsApp() {
         } else if (connection === 'open') {
             console.log('✅ LARA CONECTADA E OUVINDO ÁUDIOS!');
             console.log('👤 Usuário conectado:', JSON.stringify(sock.user || {}, null, 2));
+
+            // Inicia a rotina periódica de follow-up (a cada 1 minuto)
+            const followupInterval = setInterval(() => {
+                if (activeSock === sock) {
+                    checkFollowUps(sock);
+                } else {
+                    clearInterval(followupInterval);
+                }
+            }, 60000); // Roda a cada minuto
         }
     });
 
@@ -347,6 +357,129 @@ async function connectToWhatsApp() {
             }
         }
     });
+}
+
+function getGreetingBrazil(): string {
+    const tz = 'America/Sao_Paulo';
+    const now = new Date();
+    const formatter = new Intl.DateTimeFormat('pt-BR', {
+        timeZone: tz,
+        hour: 'numeric',
+        hour12: false
+    });
+    const hour = parseInt(formatter.format(now), 10);
+
+    if (hour >= 5 && hour < 12) return "Bom dia";
+    if (hour >= 12 && hour < 18) return "Boa tarde";
+    return "Boa noite";
+}
+
+async function checkFollowUps(sock: any) {
+    if (!sock) return;
+    try {
+        const { data: sessions, error } = await supabase
+            .from('sofia_sessions')
+            .select('*');
+
+        if (error) {
+            console.error('❌ Erro ao buscar sessões para follow-up:', error);
+            return;
+        }
+
+        const now = Date.now();
+        
+        // Tempos em milissegundos (parametrizáveis via env para testes)
+        // Padrão: 72 horas para enviar o follow-up
+        const FOLLOWUP_TIMEOUT = process.env.TEST_FOLLOWUP_TIMEOUT 
+            ? parseInt(process.env.TEST_FOLLOWUP_TIMEOUT, 10) 
+            : 72 * 60 * 60 * 1000;
+
+        // Padrão: 24 horas para encerrar após o follow-up
+        const CLOSE_TIMEOUT = process.env.TEST_CLOSE_TIMEOUT 
+            ? parseInt(process.env.TEST_CLOSE_TIMEOUT, 10) 
+            : 24 * 60 * 60 * 1000;
+
+        for (const session of sessions) {
+            const userData = session.user_data || {};
+            const stateFsm = userData.state_fsm;
+            const status = userData.status || 'novo_lead';
+            
+            // Só faz follow-up se não estiver encerrado e não for atendimento humano ativo
+            if (stateFsm === 'FINISHED' || status === 'em_atendimento' || status === 'com_advogado' || status === 'perdidos' || status === 'fechados') {
+                continue;
+            }
+
+            const lastInteractionTime = new Date(session.last_interaction).getTime();
+            const timeSinceLastInteraction = now - lastInteractionTime;
+
+            // CASO 1: Enviar o follow-up de 72h
+            if (!userData.followup_sent && timeSinceLastInteraction >= FOLLOWUP_TIMEOUT) {
+                const phone = session.phone;
+                const nome = userData.nome_usuario || 'amigo(a)';
+                const saudacao = getGreetingBrazil();
+                const textMsg = `${saudacao}, ${nome}! Podemos encerrar o nosso atendimento ou prefere continuar?`;
+
+                console.log(`⏰ [FOLLOW-UP] Enviando follow-up para ${phone} (${timeSinceLastInteraction}ms inativo)...`);
+                
+                // Envia a mensagem pelo WhatsApp
+                try {
+                    const jid = `${phone}@s.whatsapp.net`;
+                    await sock.sendMessage(jid, { text: textMsg });
+                    
+                    // Salva no histórico da sessão
+                    const oldHistory = userData.history || [];
+                    const newHistory = [...oldHistory, { role: 'assistant', content: textMsg }];
+                    
+                    const updates = {
+                        ...userData,
+                        followup_sent: true,
+                        followup_sent_at: new Date().toISOString(),
+                        history: newHistory
+                    };
+
+                    await supabase.rpc('save_session_data', {
+                        p_phone: phone,
+                        p_step: session.step || null,
+                        p_user_data_updates: updates
+                    });
+                    
+                    console.log(`✅ [FOLLOW-UP] Mensagem enviada e salva com sucesso para ${phone}.`);
+                } catch (sendErr) {
+                    console.error(`❌ [FOLLOW-UP] Erro ao enviar mensagem para ${phone}:`, sendErr);
+                }
+            }
+            
+            // CASO 2: Encerrar automaticamente 24h após o follow-up
+            if (userData.followup_sent && userData.followup_sent_at) {
+                const sentTime = new Date(userData.followup_sent_at).getTime();
+                const timeSinceSent = now - sentTime;
+
+                if (timeSinceSent >= CLOSE_TIMEOUT) {
+                    const phone = session.phone;
+                    console.log(`⏰ [FOLLOW-UP] Encerrando sessão de ${phone} por inatividade (${timeSinceSent}ms após follow-up)...`);
+                    
+                    const updates = {
+                        ...userData,
+                        state_fsm: 'FINISHED',
+                        status: 'perdidos',
+                        status_final: 'Reprovado',
+                        followup_sent: false,
+                        followup_sent_at: null
+                    };
+
+                    await supabase.rpc('save_session_data', {
+                        p_phone: phone,
+                        p_step: 'finished',
+                        p_user_data_updates: updates
+                    });
+                    
+                    console.log(`✅ [FOLLOW-UP] Sessão de ${phone} encerrada automaticamente.`);
+                }
+            }
+        }
+    } catch (err) {
+        console.error('❌ Erro na rotina de checkFollowUps:', err);
+    }
 }
 
 connectToWhatsApp();
