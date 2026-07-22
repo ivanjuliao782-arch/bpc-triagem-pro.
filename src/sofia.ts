@@ -431,7 +431,7 @@ export class SofiaEngine {
 
   detectarPerguntaEndereco(text: string): boolean {
     const cleanText = text.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-    return /\b(onde fica|onde e|endereco|localizacao|onde ficam|onde voces ficam|qual endereco)\b/i.test(cleanText);
+    return /\b(onde fica|onde e|onde voce e|voce e de onde|voces sao de onde|de onde voce e|de onde voces sao|de onde e a doutora|onde a doutora fica|onde fica a doutora|cade voces|onde vocês|endereco|localizacao|onde ficam|onde voces ficam|onde voces atendem|onde voce atende|qual endereco|onde fica o escritorio|onde fica seu escritorio|onde fica o consultorio|em que cidade voces ficam|em que cidade voce fica|qual cidade voces ficam|onde e o escritorio)\b/i.test(cleanText);
   }
 
   async runExtraction(text: string, currentState?: string): Promise<any> {
