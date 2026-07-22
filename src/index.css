@@ -25,3 +25,21 @@
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
   background: #444;
 }
+
+.custom-scrollbar-horizontal::-webkit-scrollbar {
+  height: 12px !important;
+  display: block !important;
+}
+.custom-scrollbar-horizontal::-webkit-scrollbar-track {
+  background: #12121A !important;
+  border-radius: 10px;
+  border: 1px solid #1C1C28;
+}
+.custom-scrollbar-horizontal::-webkit-scrollbar-thumb {
+  background: #4F46E5 !important; /* Cor indigo forte */
+  border-radius: 10px;
+  border: 2px solid #12121A;
+}
+.custom-scrollbar-horizontal::-webkit-scrollbar-thumb:hover {
+  background: #6366F1 !important;
+}

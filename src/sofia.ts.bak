@@ -1,0 +1,1064 @@
+
+import { createClient } from '@supabase/supabase-js';
+import Groq from 'groq-sdk';
+import { GoogleGenerativeAI } from "@google/generative-ai";
+import * as dotenv from 'dotenv';
+
+dotenv.config();
+
+const STATE_QUESTIONS: Record<string, string[]> = {
+  AWAITING_NAME: [
+    "Qual o seu nome pra eu te chamar certinho?"
+  ],
+  AWAITING_LAWYER: [
+    "Você já tem advogado mexendo pra você?"
+  ],
+  AWAITING_AGE: [
+    "Quantos anos vc tem?"
+  ],
+  AWAITING_WORK: [
+    "Você trabalha atualmente?"
+  ],
+  AWAITING_CONTRIBUTION: [
+    "Quanto tempo de contribuição vc tem para o INSS?"
+  ],
+  AWAITING_DISEASE: [
+    "Você tem algum problema de saúde?",
+    "Tem alguma doença?",
+    "Já sofre algum acidente?"
+  ],
+  BPC_AWAITING_HOUSEHOLD: [
+    "Quem mora com você na sua casa hoje em dia?"
+  ],
+  BPC_AWAITING_HOUSEHOLD_INCOME: [
+    "Dessa galera que mora com você, tem alguém que trabalha ou recebe algum dinheiro?"
+  ],
+  BPC_AWAITING_HOME_STATUS: [
+    "A casa de vocês é própria, alugada ou cedida?"
+  ],
+  BPC_AWAITING_CADUNICO: [
+    "Você tem Cadastro Único (CadÚnico)?"
+  ],
+  INSS_AWAITING_EMPLOYMENT_TYPE: [
+    "Você trabalhava de carteira assinada ou por conta própria?"
+  ],
+  INSS_AWAITING_LAST_CONTRIBUTION: [
+    "Tem quanto tempo que você se afastou? Foi em que ano?"
+  ],
+  INSS_AWAITING_REPORTS: [
+    "Você tem o laudo? Me manda o laudo, para analisar"
+  ],
+  RETIREMENT_AWAITING_WORK_HISTORY: [
+    "Seu histórico foi mais de carteira assinada ou autônomo?"
+  ],
+  RETIREMENT_AWAITING_SPECIAL_RURAL: [
+    "Já trabalhou na roça ou exposto a barulho, calor forte ou produto químico?"
+  ],
+  RETIREMENT_AWAITING_OTHER_PERIODS: [
+    "Já trabalhou em serviço público, exército ou escola técnica antes de 1998?"
+  ],
+  FINISHED: [
+    "Vou agendar um horário para você com a Dra. O primeiro atendimento não tem custo. Você prefere que o atendimento seja presencial ou online? E quais são os melhores horários para você?"
+  ]
+};
+
+const EXCECAO_QUESTIONS = [
+  "Obrigado pelas respostas! Como você informou que não possui doença e não sofreu acidente, gostaria que me explicasse melhor sua situação. Qual é a sua dúvida ou em que podemos ajudá-lo? Enquanto isso, já siga nosso perfil no Instagram @monicalucioli",
+  "Agradeço por responder! Como você me disse que não tem doenças ou sequelas de acidentes, como podemos te ajudar hoje? Me conta qual é a sua dúvida. Aproveite e nos siga no Instagram @monicalucioli",
+  "Obrigado! Como na sua situação não há relato de doença ou acidente, me explica melhor o que você gostaria de ver com a gente e qual a sua dúvida. Enquanto aguarda, siga nosso perfil @monicalucioli no Instagram"
+];
+
+export class SofiaEngine {
+  private supabase;
+  private groq;
+  private genAI;
+
+  constructor() {
+    this.supabase = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
+    this.groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+    this.genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
+  }
+
+  // Novo: Método para transcrever áudio com fallback nativo no Gemini caso a Groq esteja bloqueada
+  async transcribeAudio(audioBuffer: Buffer) {
+    // 1. Tenta transcrever com o Groq Whisper primeiro
+    try {
+      console.log("🎙️ Tentando transcrição via Groq...");
+      const transcription = await this.groq.audio.transcriptions.create({
+        file: await Groq.toFile(audioBuffer, 'audio.ogg'),
+        model: 'whisper-large-v3',
+        language: 'pt'
+      });
+      if (transcription && transcription.text) {
+        console.log("✅ Transcrição via Groq efetuada com sucesso!");
+        return transcription.text;
+      }
+    } catch (error: any) {
+      console.warn("⚠️ Falha na transcrição da Groq (provável bloqueio de IP/Rede). Tentando Gemini nativo...", error.message);
+    }
+
+    // 2. Fallback para áudio nativo do Gemini (sem necessidade de Groq!)
+    try {
+      console.log("🎙️ Iniciando transcrição nativa de áudio no Gemini...");
+      const modelsToTry = ["gemini-3.1-flash-lite", "gemini-2.5-flash", "gemini-3.5-flash", "gemini-2.5-pro", "gemini-2.5-flash-lite"];
+      
+      for (const modelName of modelsToTry) {
+        try {
+          console.log(`🤖 Tentando áudio nativo no modelo ${modelName}...`);
+          const model = this.genAI.getGenerativeModel({ model: modelName }, { apiVersion: "v1" });
+          const result = await model.generateContent([
+            {
+              inlineData: {
+                data: audioBuffer.toString("base64"),
+                mimeType: "audio/ogg"
+              }
+            },
+            "Transcreva este áudio em português de forma literal e precisa. Retorne APENAS o texto falado, sem qualquer comentário, introdução ou explicação adicional."
+          ]);
+          
+          const text = result.response.text();
+          if (text && text.trim()) {
+            console.log(`✅ Áudio transcrito com sucesso via Gemini (${modelName})!`);
+            return text.trim();
+          }
+        } catch (err: any) {
+          console.warn(`⚠️ Transcrição via Gemini falhou para ${modelName}: ${err.message}`);
+        }
+      }
+    } catch (err: any) {
+      console.error("❌ Falha crítica em todas as tentativas de transcrição de áudio:", err.message);
+    }
+
+    return null;
+  }
+
+  private isSimpleGreeting(text: string): boolean {
+    const clean = text.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+    const cleanNoPunct = clean.replace(/[?!.,]/g, "").trim();
+    
+    const greetings = [
+      'oi', 'ola', 'bom dia', 'boa tarde', 'boa noite', 'ola lara', 'oi lara', 
+      'opa', 'tudo bem', 'tudo bom', 'fala', 'blz', 'fala blz', 'beleza', 
+      'eae', 'eai', 'salve', 'opa lara'
+    ];
+    
+    return cleanNoPunct.length <= 15 && greetings.includes(cleanNoPunct);
+  }
+
+  private isValidName(text: string): boolean {
+    const clean = text.trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    
+    // Nomes não contêm números
+    if (/\d/.test(clean)) return false;
+    
+    // Divide em palavras
+    const words = clean.split(/\s+/).filter(w => w.length > 0);
+    const wordCount = words.length;
+
+    // Deve ter entre 1 e 4 palavras (aceitando nomes simples como 'João' ou compostos como 'João Silva')
+    if (wordCount < 1 || wordCount > 4) return false;
+
+    // Lista de verbos comuns, gírias, saudações, pronomes, artigos e stop words que não fazem parte de um nome próprio simples
+    const forbiddenWords = [
+      'fala', 'quero', 'tenho', 'sou', 'estou', 'chamo', 'chama', 'moro', 
+      'trabalho', 'contribuo', 'recebo', 'preciso', 'gostaria', 'saber', 'ajuda', 
+      'ver', 'aposentar', 'aposentadoria', 'inss', 'bpc', 'loas', 'auxilio', 'doenca',
+      'blz', 'beleza', 'opa', 'eae', 'eai', 'salve', 'ola', 'oi', 'tudo', 'bem', 
+      'bom', 'boa', 'dia', 'tarde', 'noite', 'sim', 'nao', 'de', 'do', 'da', 'em', 
+      'para', 'com', 'um', 'uma', 'como', 'quem', 'qual', 'meu', 'minha', 'nome', 
+      'se', 'o', 'a', 'os', 'as', 'uns', 'umas', 'ele', 'ela', 'anos', 'idade', 
+      'velho', 'velha', 'lara', 'monica', 'mônica', 'lucioli'
+    ];
+
+    for (const word of words) {
+      if (forbiddenWords.includes(word)) {
+        return false;
+      }
+      // Evita letras avulsas que não sejam preposições válidas
+      if (word.length < 2 && word !== 'e') {
+        return false;
+      }
+    }
+    // Nomes não devem conter pontuações de frases/perguntas
+    if (/[?!.,;:-]/.test(text)) return false;
+    return true;
+  }
+
+  sanitizeExtractedData(mergedData: any, text: string, currentState?: string): any {
+    const lowerText = text.toLowerCase().trim();
+    const cleanText = text.toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^\w\s]/g, "")
+      .trim();
+
+    // 1. trabalha_atualmente: false auto-inference
+    if (
+      mergedData.has_no_income === true || 
+      mergedData.is_bedridden === true ||
+      cleanText.includes("nao tenho renda") ||
+      cleanText.includes("sem renda") ||
+      cleanText.includes("desempregado") ||
+      cleanText.includes("desempregada") ||
+      cleanText.includes("nao trabalho") ||
+      cleanText.includes("sem trabalhar") ||
+      cleanText.includes("nao tenho como trabalhar") ||
+      cleanText.includes("nao consigo trabalhar") ||
+      cleanText.includes("nao posso trabalhar")
+    ) {
+      mergedData.trabalha_atualmente = false;
+    }
+
+    // 2. Clear works/duration confusion in AWAITING_CONTRIBUTION / RETIREMENT_AWAITING_WORK_HISTORY
+    if (currentState === 'AWAITING_CONTRIBUTION' || currentState === 'RETIREMENT_AWAITING_WORK_HISTORY') {
+      const hasDurationWord = /(ano|anos|década|décadas|mês|meses)/i.test(text);
+      if (hasDurationWord && !cleanText.includes("tenho") && !cleanText.includes("idade") && !cleanText.includes("nasci")) {
+        mergedData.inss_tempo_carteira = text.trim();
+        mergedData.ja_contribuiu = true;
+        delete mergedData.idade;
+      }
+    }
+
+    // 3. Yes/No mapping for FSM states
+    if (cleanText === 'nao' || cleanText === 'n') {
+      if (currentState === 'AWAITING_LAWYER') mergedData.has_lawyer = false;
+      if (currentState === 'AWAITING_WORK') mergedData.trabalha_atualmente = false;
+      if (currentState === 'AWAITING_CONTRIBUTION') mergedData.ja_contribuiu = false;
+      if (currentState === 'BPC_AWAITING_CADUNICO') mergedData.bpc_cad_unico = false;
+      if (currentState === 'INSS_AWAITING_REPORTS') mergedData.inss_laudos_medicos = false;
+      if (currentState === 'INSS_AWAITING_LAST_CONTRIBUTION') {
+        mergedData.inss_ultima_contribuicao = 'Não contribuiu nos últimos 5 anos';
+        mergedData.has_recent_contribution = false;
+      }
+    } else if (cleanText === 'sim' || cleanText === 's') {
+      if (currentState === 'AWAITING_LAWYER') mergedData.has_lawyer = true;
+      if (currentState === 'AWAITING_WORK') mergedData.trabalha_atualmente = true;
+      if (currentState === 'AWAITING_CONTRIBUTION') mergedData.ja_contribuiu = true;
+      if (currentState === 'BPC_AWAITING_CADUNICO') mergedData.bpc_cad_unico = true;
+      if (currentState === 'INSS_AWAITING_REPORTS') mergedData.inss_laudos_medicos = true;
+    }
+
+    // 4. Name validation
+    if (mergedData.nome_usuario && !this.isValidName(mergedData.nome_usuario)) {
+      console.log(`⚠️ Nome pré-extraído/IA "${mergedData.nome_usuario}" rejeitado pelas regras de validação.`);
+      delete mergedData.nome_usuario;
+    }
+
+    return mergedData;
+  }
+
+  async runExtraction(text: string, currentState?: string): Promise<any> {
+    const prompt = `Você é um extrator de dados de texto especializado em triagem previdenciária.
+Sua única tarefa é analisar o texto enviado pelo cliente e extrair todas as informações preenchidas para os campos especificados abaixo.
+Responda APENAS com um objeto JSON válido, sem markdown, sem explicações. Qualquer campo não presente ou não mencionado no texto deve ser retornado como null.
+
+${currentState ? `CONTEXTO DA CONVERSA: O estado atual da triagem é "${currentState}". Se for "AWAITING_CONTRIBUTION" ou "RETIREMENT_AWAITING_WORK_HISTORY", as respostas curtas de tempo como "38 anos", "20 anos", "15 anos" referem-se ao tempo de contribuição ou tempo de carteira, e NÃO à idade do cliente.` : ''}
+
+Campos a extrair:
+- nome_usuario: (string ou null) O nome próprio do cliente (ex: João, Maria, José). ATENÇÃO: Nunca extraia saudações, gírias ou verbos de saudação como nome próprio (por exemplo, se o cliente enviar "Oi", "Olá", "Fala", "Blz", "Bom dia", "Quero", "Tenho", NUNCA extraia esses termos no campo nome_usuario; retorne null para esses casos).
+- sofrimento_relatado: (string ou null) Se o cliente relatar sofrimento emocional, luto, desespero, perda recente, dor física, limitação ou incapacidade grave para o trabalho (ex: "estou sofrendo muito", "meu marido faleceu", "estou na cama com dor", "estou desesperado", "problema no joelho que não deixa trabalhar", "dor na coluna forte", "depressão grave"). Extraia a frase ou descrição curta do sofrimento/dor/perda/incapacidade/limitação relatado.
+- has_lawyer: (boolean ou null) Se o cliente já possui um advogado para o seu caso (true se tiver, false se disser que não tem, ex: "não tenho", "não tenho advogado", "não", e null se não for mencionado).
+- idade: (string/number ou null) A idade ou ano de nascimento se puder ser deduzida.
+- trabalha_atualmente: (boolean ou null) Se o cliente trabalha hoje em dia. ATENÇÃO: Infira como false automaticamente se o cliente mencionar expressões que indicam diretamente que ele não trabalha ou não tem atividade remunerada (por exemplo: "não tenho renda", "estou desempregado(a)", "estou sem trabalhar", "não tenho como trabalhar", "sou de cama", "não trabalho").
+- ja_contribuiu: (boolean ou string ou null) Se o cliente já pagou ou contribuiu para o INSS na vida. ATENÇÃO: Se o cliente disser que tempo de contribuição (ex: "15 anos de contribuição" ou "trabalhei de carteira assinada"), classifique ja_contribuiu como true ou a descrição correspondente.
+- tem_doenca_ou_limitacao: (boolean ou null) Se o cliente relatar alguma doença, incapacidade, problema de saúde, sequela de acidente ou limitação.
+- doenca: (string ou null) O nome, descrição ou diagnóstico da doença, dor ou problema de saúde relatado pelo cliente (ex: "hérnia de disco", "cisto sinovial", "gota e reumatismo").
+- acidente: (string ou null) O nome, descrição ou tipo de acidente sofrido pelo cliente caso relatado (ex: "acidente de moto", "acidente de trabalho").
+- inss_tempo_carteira: (string ou null) Tempo trabalhado de carteira assinada ou tempo de contribuição mencionado (ex: "15 anos").
+- bpc_pessoas_casa: (string ou null) Quantidade ou quem são as pessoas que moram com ele.
+- bpc_parentesco: (string ou null) Grau de parentesco das pessoas que moram com ele.
+- bpc_quem_renda: (string ou null) Quem na casa tem renda e qual o valor.
+- bpc_casa_alugada_propria: (string ou null) Se a casa é alugada, própria, cedida, etc.
+- bpc_cad_unico: (boolean ou string ou null) Se tem Cadastro Único (CadÚnico).
+- inss_foi_autonomo: (boolean ou null) Se trabalhou como autônomo.
+- inss_como_contribuiu: (string ou null) Como contribuiu (carnê, carteira assinada, etc.).
+- inss_ultima_contribuicao: (string ou null) Informação sobre se e quando contribuiu ou pagou carnê do INSS nos últimos 5 anos (ex: "paguei ano passado", "há 3 anos atrás", "não paguei nos últimos 5 anos").
+- inss_laudos_medicos: (boolean ou null) Se possui exames ou laudos médicos.
+- inss_data_laudo: (string ou null) Data do laudo médico.
+- has_recent_report: (boolean ou null) Se o laudo médico é recente (últimos meses).
+- has_cad_unico: (boolean ou null) Se tem CadÚnico ativo.
+- has_recent_contribution: (boolean ou null) Se tem contribuição recente ao INSS.
+- has_no_income: (boolean ou null) Se não possui nenhuma renda.
+- is_bedridden: (boolean ou null) Se está acamado ou precisa de assistência permanente.
+- cidade: (string ou null) Cidade e/ou estado onde o cliente mora, se mencionado (ex: "São Paulo/SP", "Fortaleza-CE", "interior de Minas").
+- retirement_work_history: (string ou null) Histórico de registro ou trabalho do cliente (se trabalhou de carteira assinada, autônomo, sem registro, pagou carnê, etc.).
+- retirement_special_rural: (string ou null) Experiência de trabalho na roça (meio rural) ou sob condições insalubres/perigosas (muito ruído, calor, químicos, eletricidade, perigo).
+- retirement_other_periods: (string ou null) Menção a serviço público, militar, escola técnica anterior a 1998, ou menor aprendiz.
+- tem_docs_em_maos: (boolean ou null) Se o cliente menciona possuir carteira de trabalho, CNIS, extratos, carnês ou qualquer documento físico/digital previdenciário em mãos (ex: "estou com a carteira aqui", "tenho os documentos em mãos", "tenho os papéis", "tenho os comprovantes").
+- is_off_topic: (boolean ou null) true se a mensagem do cliente for completamente irrelevante para a triagem ou fora do contexto do escritório (ex: receitas de bolo, futebol, piadas, assuntos aleatórios que não têm a ver com previdência, aposentadoria, doença, dor, trabalho, idade ou nome).
+
+Texto a analisar:
+"${text}"
+
+JSON de retorno:`;
+
+    try {
+      console.log("🔍 Executando pre-extração de campos...");
+      const responseText = await this.generateTextWithFallback(prompt);
+      if (!responseText) return {};
+      const cleanJson = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
+      const extracted = JSON.parse(cleanJson);
+      
+      // Filtra chaves com valores válidos (não nulos, não indefinidos, não vazios)
+      const mergedData: any = {};
+      for (const key of Object.keys(extracted)) {
+        if (extracted[key] !== null && extracted[key] !== undefined && extracted[key] !== "") {
+          mergedData[key] = extracted[key];
+        }
+      }
+      
+      // Aplica regras de sanitização/invenções pós-extração
+      return this.sanitizeExtractedData(mergedData, text, currentState);
+    } catch (error) {
+      console.error("⚠️ Falha na pre-extração de campos:", error);
+      return {};
+    }
+  }
+
+  async processMessage(phone: string, input: string | Buffer) {
+    const isAudio = typeof input !== 'string';
+    let text: string | null = null;
+    const timestampStart = new Date().toISOString();
+
+    if (isAudio) {
+      console.log(`[INSTRUMENTAÇÃO ÁUDIO] [${timestampStart}] [Lead: ${phone}] 1. Áudio recebido (Buffer size: ${(input as Buffer).length} bytes)`);
+      console.log(`[INSTRUMENTAÇÃO ÁUDIO] [${timestampStart}] [Lead: ${phone}] 2. Transcrição iniciada`);
+      try {
+        text = await this.transcribeAudio(input as Buffer);
+        if (text) {
+          console.log(`[INSTRUMENTAÇÃO ÁUDIO] [${timestampStart}] [Lead: ${phone}] 3. Texto transcrito completo: "${text}"`);
+        } else {
+          console.log(`[INSTRUMENTAÇÃO ÁUDIO] [${timestampStart}] [Lead: ${phone}] 6. Motivo caso a transcrição falhe: Retornou texto vazio ou nulo de ambos Groq e Gemini`);
+        }
+      } catch (err: any) {
+        console.error(`[INSTRUMENTAÇÃO ÁUDIO] [${timestampStart}] [Lead: ${phone}] 6. Motivo caso a transcrição falhe: Erro lançado no processo de transcrição: ${err.message}`);
+      }
+    } else {
+      text = input as string;
+    }
+
+    if (!text) return "Desculpe, não consegui entender o seu áudio. Pode repetir ou digitar?";
+
+    const timestamp = new Date().toISOString();
+    console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 1. Mensagem recebida: "${text}"`);
+
+    const isGreeting = this.isSimpleGreeting(text);
+    let { data: session } = await this.supabase.from('sofia_sessions').select('*').eq('phone', phone).single();
+    console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 2. Estado atual carregado: FSM="${session?.user_data?.state_fsm || 'N/A'}", Step="${session?.step || 'N/A'}"`);
+
+    // 1. Extração prévia de campos do texto antes de qualquer coisa (bloco consolidado)
+    let extractedData: any = {};
+    if (!isGreeting) {
+      const currentState = session?.user_data?.state_fsm || undefined;
+      console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 3. Conteúdo enviado ao extractor: "${text}" (currentState: "${currentState}")`);
+      if (isAudio) {
+        console.log(`[INSTRUMENTAÇÃO ÁUDIO] [${timestamp}] [Lead: ${phone}] 4. Resultado enviado ao extractor: "${text}"`);
+      }
+      extractedData = await this.runExtraction(text, currentState);
+      console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 4. Dados extraídos: ${JSON.stringify(extractedData)}`);
+      if (isAudio) {
+        console.log(`[INSTRUMENTAÇÃO ÁUDIO] [${timestamp}] [Lead: ${phone}] 5. Campos extraídos do áudio: ${JSON.stringify(extractedData)}`);
+      }
+      console.log("📝 Dados extraídos previamente:", JSON.stringify(extractedData));
+    }
+
+    if (session && session.user_data?.has_lawyer === true) {
+      // Se já possui advogado, encerra de forma educada e definitiva sem chamar a IA
+      const nome = session.user_data?.nome_usuario || 'amigo(a)';
+      // Garante que o status_final fique salvo como com_advogado
+      const updates = { status_final: 'com_advogado', score_total: 0 };
+      console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 6. Payload enviado ao Supabase: step="finished", updates=${JSON.stringify(updates)}`);
+
+      const { data: newMergedData, error } = await this.supabase.rpc('save_session_data', {
+        p_phone: phone,
+        p_step: 'finished',
+        p_user_data_updates: updates
+      });
+
+      if (error) {
+        console.error(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 7. Falha na persistência: ${JSON.stringify(error)}`);
+      } else {
+        console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 7. Confirmação de persistência bem-sucedida. Data retornado: ${JSON.stringify(newMergedData)}`);
+      }
+
+      const { data: reReadSession } = await this.supabase.from('sofia_sessions').select('*').eq('phone', phone).single();
+      console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 8. Estado relido após save: FSM="${reReadSession?.user_data?.state_fsm}", step="${reReadSession?.step}", user_data=${JSON.stringify(reReadSession?.user_data)}`);
+
+      const finalReply = `Entendo, ${nome}. Por questões éticas, nosso escritório não interfere em processos que já estão sendo conduzidos por outro advogado. O ideal é continuar com ele. Inclusive, se o seu caso for favorável, ter dois advogados geraria dois honorários, o que não seria bom pra você.`;
+      console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 9. Resposta final enviada ao cliente: "${finalReply}"`);
+      return finalReply;
+    }
+
+    if (!session) {
+      // Cria a sessão com a saudação inicial já no histórico
+      const hour = parseInt(new Date().toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', hour12: false }));
+      let saudacao = "Boa noite";
+      if (hour >= 6 && hour < 12) saudacao = "Bom dia";
+      else if (hour >= 12 && hour < 18) saudacao = "Boa tarde";
+      
+      const apresentacao = `${saudacao}! Tudo bem? Sou a Lara, do escritório da Dra. Mônica Lucioli. Me fala seu nome pra eu te chamar certinho`;
+      
+      // Se tiver dados extraídos da primeira mensagem, mescla eles e resolve o estado da FSM
+      const initialUserData = {
+        history: [{ role: 'assistant', content: apresentacao }],
+        state_fsm: 'AWAITING_NAME',
+        ...extractedData
+      };
+
+      const resolved = this.resolveFSMState(initialUserData);
+      initialUserData.state_fsm = resolved.state;
+      if (resolved.fluxo_ativo) {
+        initialUserData.fluxo_ativo = resolved.fluxo_ativo;
+      }
+      console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 5. Estado calculado pela FSM: state="${resolved.state}", fluxo="${resolved.fluxo_ativo || 'N/A'}"`);
+
+      console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 6. Payload enviado ao Supabase: step="welcome", updates=${JSON.stringify(initialUserData)}`);
+      const { data: createdUserData, error: initError } = await this.supabase.rpc('save_session_data', {
+        p_phone: phone,
+        p_step: 'welcome',
+        p_user_data_updates: initialUserData
+      });
+
+      if (initError) {
+        console.error(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 7. Falha na persistência: ${JSON.stringify(initError)}`);
+      } else {
+        console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 7. Confirmação de persistência bem-sucedida. Data retornado: ${JSON.stringify(createdUserData)}`);
+      }
+
+      const { data: reReadSession } = await this.supabase.from('sofia_sessions').select('*').eq('phone', phone).single();
+      console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 8. Estado relido após save: FSM="${reReadSession?.user_data?.state_fsm}", step="${reReadSession?.step}", user_data=${JSON.stringify(reReadSession?.user_data)}`);
+
+      const newSessionData: any = {
+        phone,
+        step: 'welcome',
+        user_data: createdUserData || initialUserData
+      };
+      if (extractedData.sofrimento_relatado) {
+        newSessionData.novo_sofrimento = extractedData.sofrimento_relatado;
+      }
+
+      if (isGreeting) {
+        // Se for uma saudação curta simples, retorna a apresentação
+        console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 9. Resposta final enviada ao cliente: "${apresentacao}"`);
+        return apresentacao;
+      } else {
+        // Se for um bloco substantivo acumulado, processa com a inteligência artificial imediatamente
+        console.log(`🧠 Primeira mensagem substantiva recebida: "${text}". Processando com IA...`);
+        return this.handleStepWithAI(newSessionData, text);
+      }
+    } else {
+      // Se a sessão já existe, verifica se houve mudança de nome do usuário para reiniciar a FSM se necessário
+      const currentUserData = session.user_data || {};
+      const oldNome = currentUserData.nome_usuario;
+      const newNome = extractedData.nome_usuario;
+
+      let updatedUserData = {
+        ...currentUserData,
+        ...extractedData
+      };
+
+      // Se um novo nome diferente for informado, resetamos o histórico e reiniciamos a FSM para o novo cliente
+      if (newNome && oldNome && newNome.trim().toLowerCase() !== oldNome.trim().toLowerCase()) {
+        console.log(`🔄 Novo nome detectado (${newNome} diferente de ${oldNome}). Reiniciando FSM da sessão...`);
+        updatedUserData = {
+          ...extractedData,
+          history: [
+            { role: 'assistant', content: `Olá! Tudo bem? Sou a Lara, do escritório da Dra. Mônica Lucioli. Me fala seu nome pra eu te chamar certinho` },
+            { role: 'user', content: text }
+          ],
+          state_fsm: 'AWAITING_NAME',
+          nome_usuario: newNome
+        };
+      }
+
+      // Resolve a FSM deterministicamente pós-extração
+      const resolved = this.resolveFSMState(updatedUserData);
+      updatedUserData.state_fsm = resolved.state;
+      if (resolved.fluxo_ativo) {
+        updatedUserData.fluxo_ativo = resolved.fluxo_ativo;
+      }
+      console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 5. Estado calculado pela FSM (pré-AI): state="${resolved.state}", fluxo="${resolved.fluxo_ativo || 'N/A'}"`);
+
+      // Se houver novos dados extraídos ou o histórico foi reiniciado, salva no banco de dados imediatamente
+      if (Object.keys(extractedData).length > 0 || (newNome && oldNome && newNome.trim().toLowerCase() !== oldNome.trim().toLowerCase())) {
+        console.log("💾 Salvando dados extraídos previamente no banco de dados...");
+        const updates = updatedUserData;
+        console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 6. Payload enviado ao Supabase (pré-AI): step=null, updates=${JSON.stringify(updates)}`);
+
+        const { data: newMergedData, error } = await this.supabase.rpc('save_session_data', {
+          p_phone: phone,
+          p_step: null,
+          p_user_data_updates: updates
+        });
+        
+        if (error) {
+          console.error(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 7. Falha na persistência (pré-AI): ${JSON.stringify(error)}`);
+        } else {
+          console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 7. Confirmação de persistência bem-sucedida (pré-AI). Data retornado: ${JSON.stringify(newMergedData)}`);
+          session.user_data = newMergedData || updatedUserData;
+        }
+
+        const { data: reReadSession } = await this.supabase.from('sofia_sessions').select('*').eq('phone', phone).single();
+        console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 8. Estado relido após save (pré-AI): FSM="${reReadSession?.user_data?.state_fsm}", step="${reReadSession?.step}", user_data=${JSON.stringify(reReadSession?.user_data)}`);
+      }
+
+      return this.handleStepWithAI(session, text);
+    }
+  }
+  private async handleStepWithAI(session: any, text: string) {
+    const { step, user_data, phone } = session;
+    const history = user_data?.history || [];
+
+    // Resolve a FSM determinística para garantir que estamos no estado correto
+    const resolved = this.resolveFSMState(user_data);
+    const stateFsm = resolved.state;
+    if (resolved.fluxo_ativo) {
+      user_data.fluxo_ativo = resolved.fluxo_ativo;
+    }
+    user_data.state_fsm = stateFsm;
+
+    // FORÇA PASSO 2 sem chamar IA apenas se o texto de fato se parecer com um nome próprio real
+    if (history.length === 1 && text.trim().split(' ').length <= 3 && this.isValidName(text)) {
+        const nome = text.trim();
+        const resposta = `Muito prazer, ${nome}! Só uma perguntinha importante antes da gente continuar: você já tem advogado mexendo pra você?`;
+        const newHistory = [...history, { role: 'user', content: text }, { role: 'assistant', content: resposta }];
+        const updates = {
+            history: newHistory,
+            nome_usuario: nome,
+            state_fsm: 'AWAITING_LAWYER'
+        };
+        const timestamp = new Date().toISOString();
+        console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 5. Estado calculado pela FSM (guarda nome): state="AWAITING_LAWYER"`);
+        console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 6. Payload enviado ao Supabase (guarda nome): step=null, updates=${JSON.stringify(updates)}`);
+        
+        const { data: newMergedData, error } = await this.supabase.rpc('save_session_data', {
+            p_phone: phone,
+            p_step: null,
+            p_user_data_updates: updates
+        });
+        if (error) {
+          console.error(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 7. Falha na persistência (guarda nome): ${JSON.stringify(error)}`);
+        } else {
+          console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 7. Confirmação de persistência bem-sucedida (guarda nome). Data retornado: ${JSON.stringify(newMergedData)}`);
+        }
+
+        const { data: reReadSession } = await this.supabase.from('sofia_sessions').select('*').eq('phone', phone).single();
+        console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 8. Estado relido após save (guarda nome): FSM="${reReadSession?.user_data?.state_fsm}", step="${reReadSession?.step}", user_data=${JSON.stringify(reReadSession?.user_data)}`);
+
+        console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 9. Resposta final enviada ao cliente: "${resposta}"`);
+        return resposta;
+    }
+
+    // GUARDA DETERMINÍSTICO 2: Se já temos o nome mas a pergunta do advogado NUNCA foi
+    // feita explicitamente no histórico do assistente, forçamos ela AGORA sem chamar a IA.
+    const lawyerQuestionWasAsked = history.some((h: any) =>
+      h.role === 'assistant' &&
+      String(h.content || '').toLowerCase().includes('advogado')
+    );
+    const nomeConfirmado = user_data?.nome_usuario;
+
+    if (nomeConfirmado && !lawyerQuestionWasAsked && user_data?.has_lawyer !== true) {
+      console.log(`🔒 GUARDA: Nome "${nomeConfirmado}" confirmado mas advogado nunca foi perguntado. Forçando pergunta.`);
+      
+      let resposta = `${nomeConfirmado}, você já tem advogado mexendo pra você?`;
+      
+      const newHistory = [...history, { role: 'user', content: text }, { role: 'assistant', content: resposta }];
+      const updates = {
+        history: newHistory,
+        state_fsm: 'AWAITING_LAWYER'
+      };
+      const timestamp = new Date().toISOString();
+      console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 5. Estado calculado pela FSM (guarda advogado): state="AWAITING_LAWYER"`);
+      console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 6. Payload enviado ao Supabase (guarda advogado): step=null, updates=${JSON.stringify(updates)}`);
+
+      const { data: newMergedData, error = null } = await this.supabase.rpc('save_session_data', {
+        p_phone: phone,
+        p_step: null,
+        p_user_data_updates: updates
+      });
+      if (error) {
+        console.error(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 7. Falha na persistência (guarda advogado): ${JSON.stringify(error)}`);
+      } else {
+        console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 7. Confirmação de persistência bem-sucedida (guarda advogado). Data retornado: ${JSON.stringify(newMergedData)}`);
+      }
+
+      const { data: reReadSession } = await this.supabase.from('sofia_sessions').select('*').eq('phone', phone).single();
+      console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 8. Estado relido após save (guarda advogado): FSM="${reReadSession?.user_data?.state_fsm}", step="${reReadSession?.step}", user_data=${JSON.stringify(reReadSession?.user_data)}`);
+
+      console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 9. Resposta final enviada ao cliente: "${resposta}"`);
+      return resposta;
+    }
+
+    console.log('==== DEBUG DE MEMÓRIA ====');
+    console.log('phone limpo:', phone);
+    console.log('histórico lido do banco (Qtd mensagens):', history.length);
+    console.log('última mensagem no histórico:', history.length > 0 ? history[history.length - 1].content : 'Nenhuma');
+    console.log('==========================');
+
+    // Sorteio aleatório de pergunta de acordo com o estado FSM resolvido ou fluxo de exceção
+    let chosenQuestion = "";
+    if (resolved.fluxo_ativo === 'EXCECAO') {
+      const idx = Math.floor(Math.random() * EXCECAO_QUESTIONS.length);
+      chosenQuestion = EXCECAO_QUESTIONS[idx];
+    } else {
+      const questionsList = STATE_QUESTIONS[stateFsm];
+      if (questionsList && questionsList.length > 0) {
+        const idx = Math.floor(Math.random() * questionsList.length);
+        chosenQuestion = questionsList[idx];
+      } else {
+        chosenQuestion = "Com base no que você me contou, nossa equipe pode te ajudar. Um especialista vai entrar em contato. Aguarde um momento.";
+      }
+    }
+
+    // Se o cliente chamou de Dra/Doutora, adiciona leve correção
+    let prefixDra = "";
+    if (text.toLowerCase().includes("doutora") || text.toLowerCase().includes(" dra ")) {
+      prefixDra = "Pode me chamar de Lara! Mas pode falar, estou aqui pra te ajudar. ";
+    }
+
+    let finalReply = "";
+
+    // 2. Se houver sofrimento relatado (dor/doença/luto), gera o acolhimento
+    if (user_data.sofrimento_relatado) {
+      const sofrimento = user_data.sofrimento_relatado;
+      const promptEmpatia = `Você é Lara, atendente humana do escritório da Dra. Mônica Lucioli.
+O cliente chamado ${nomeConfirmado || 'amigo'} relatou o seguinte sofrimento/dor/luto: "${sofrimento}".
+Escreva uma única frase curtíssima (máximo 1 linha) de acolhimento e empatia sincera e informal no tom do escritório (use "vc", "pra", "tá", nunca use palavras formais ou robóticas como "compreendo", "lamentamos", "fico aliviada", "fico feliz em orientar").
+Exemplo: "Poxa, sinto muito por essa dor no joelho" ou "Sinto muito pela perda do seu marido".
+Retorne APENAS a frase de acolhimento, sem qualquer outra informação ou pergunta.`;
+
+      const empathyPrefix = await this.generateTextWithFallback(promptEmpatia);
+      if (empathyPrefix && empathyPrefix.trim()) {
+        finalReply = `${prefixDra}${empathyPrefix.trim()}\n\n${chosenQuestion}`;
+      } else {
+        finalReply = `${prefixDra}${chosenQuestion}`;
+      }
+    } else {
+      // Sem dor/doença/luto: vai direto para a pergunta final (estilo direto dos prints)
+      finalReply = `${prefixDra}${chosenQuestion}`;
+    }
+
+    // Limpar sofrimento_relatado após usá-lo uma vez (para não repetir nos próximos turnos!)
+    if (user_data.sofrimento_relatado) {
+      delete user_data.sofrimento_relatado;
+    }
+
+    // Calcular pontuação de lead baseada na fórmula unificada (escala 0-100)
+    let scoreValue = 0;
+    
+    // Helper parsers for early detection
+    const parseAgeLocal = (v: any) => {
+      if (!v) return 0;
+      const match = String(v).match(/\d+/);
+      return match ? parseInt(match[0], 10) : 0;
+    };
+    const parseContribLocal = (v: any) => {
+      if (!v) return 0;
+      const match = String(v).match(/\d+/);
+      return match ? parseInt(match[0], 10) : 0;
+    };
+
+    const ageNumForDetect = parseAgeLocal(user_data?.idade);
+    const contribYearsForDetect = parseContribLocal(
+      user_data?.inss_tempo_carteira ||
+      user_data?.tempo_contribuicao
+    );
+    const hasDiseaseForDetect = user_data?.tem_doenca_ou_limitacao === true;
+
+    const hasAposeText = history.some((h: any) => 
+      String(h.content || "").toLowerCase().includes("aposentar") || 
+      String(h.content || "").toLowerCase().includes("aposentadoria")
+    ) || text.toLowerCase().includes("aposentar") || text.toLowerCase().includes("aposentadoria");
+
+    const isAposentadoria = (
+      user_data?.fluxo_ativo === 'APOSENTADORIA' ||
+      (
+        ((ageNumForDetect >= 55 || contribYearsForDetect >= 15) || hasAposeText) &&
+        !hasDiseaseForDetect
+      )
+    );
+    
+    if (isAposentadoria) {
+      // 1. Tempo de Contribuição relevante
+      const parseContrib = (v: any) => {
+        if (!v) return 0;
+        const match = String(v).match(/\d+/);
+        return match ? parseInt(match[0], 10) : 0;
+      };
+      const contribYears = parseContrib(
+        user_data?.inss_tempo_carteira ||
+        user_data?.tempo_contribuicao
+      );
+      if (contribYears >= 28) {
+        scoreValue += 40;
+      } else if (contribYears >= 15 && contribYears <= 27) {
+        scoreValue += 25;
+      }
+
+      // 2. Idade
+      const parseAge = (v: any) => {
+        if (!v) return 0;
+        const match = String(v).match(/\d+/);
+        return match ? parseInt(match[0], 10) : 0;
+      };
+      const ageNum = parseAge(user_data?.idade);
+      if (ageNum >= 60) {
+        scoreValue += 20;
+      } else if (ageNum >= 55 && ageNum <= 59) {
+        scoreValue += 15;
+      }
+
+      // 3. Sem advogado
+      const hasLawyer = user_data?.has_lawyer === true;
+      if (!hasLawyer) {
+        scoreValue += 15;
+      }
+
+      // 4. Carteira assinada
+      const workHistory = String(
+        user_data?.retirement_work_history ||
+        user_data?.inss_como_contribuiu ||
+        ""
+      ).toLowerCase();
+      if (workHistory.includes('carteira') || workHistory.includes('assinado') || workHistory.includes('registro')) {
+        scoreValue += 10;
+      }
+
+      // 5. Trabalho especial ou rural
+      const specialRural = String(
+        user_data?.retirement_special_rural ||
+        ""
+      ).toLowerCase();
+      const hasSpecial = (
+        specialRural.includes('especial') ||
+        specialRural.includes('insalubre') ||
+        specialRural.includes('perigo') ||
+        specialRural.includes('ruido') ||
+        specialRural.includes('quimico') ||
+        specialRural.includes('calor') ||
+        specialRural.includes('eletricidade')
+      );
+      const hasRural = (
+        specialRural.includes('rural') ||
+        specialRural.includes('roça') ||
+        specialRural.includes('campo') ||
+        specialRural.includes('lavoura') ||
+        specialRural.includes('colono')
+      );
+      if (hasSpecial || hasRural) {
+        scoreValue += 20;
+      }
+
+      // 6. Documentos em mãos
+      const hasDocs = user_data?.tem_docs_em_maos === true;
+      if (hasDocs) {
+        scoreValue += 10;
+      }
+    } else {
+      // 1. Idade
+      const parseAge = (v: any) => {
+        if (!v) return 0;
+        const match = String(v).match(/\d+/);
+        return match ? parseInt(match[0], 10) : 0;
+      };
+      const ageNum = parseAge(user_data?.idade);
+      if (ageNum >= 65) scoreValue += 40;
+      else if (ageNum >= 50) scoreValue += 15;
+
+      // 2. Tempo de Contribuição relevante
+      const parseContrib = (v: any) => {
+        if (!v) return 0;
+        const match = String(v).match(/\d+/);
+        return match ? parseInt(match[0], 10) : 0;
+      };
+      const contribYears = parseContrib(user_data?.inss_tempo_carteira || user_data?.tempo_contribuicao);
+      if (contribYears >= 15) scoreValue += 10;
+
+      // 3. Doença / Incapacidade
+      const hasDiseaseVal = user_data?.tem_doenca_ou_limitacao === true || (user_data?.doenca && user_data.doenca.toLowerCase() !== 'não');
+      if (hasDiseaseVal) scoreValue += 15;
+
+      // 4. Critérios da Doutora
+      const hasRecentReport = user_data?.has_recent_report === true || 
+                              ((user_data?.inss_laudos_medicos === true) && hasDiseaseVal);
+      const hasCadUnico = user_data?.has_cad_unico === true;
+      const hasRecentContrib = user_data?.has_recent_contribution === true;
+      const hasNoIncome = user_data?.has_no_income === true;
+      const isBedridden = user_data?.is_bedridden === true;
+
+      if (hasRecentReport) scoreValue += 15;
+      if (hasCadUnico) scoreValue += 10;
+      if (hasRecentContrib) scoreValue += 15;
+      if (hasNoIncome) scoreValue += 10;
+      if (isBedridden) scoreValue += 20;
+    }
+
+    let score_percent = Math.min(100, scoreValue);
+    if (user_data?.has_lawyer === true) {
+      score_percent = 0;
+      user_data.status_final = 'com_advogado';
+    }
+
+    // Re-calcular FSM deterministicamente
+    const nextStateResolved = this.resolveFSMState(user_data);
+    const finalState = nextStateResolved.state;
+    const finalFluxo = nextStateResolved.fluxo_ativo;
+    const timestamp = new Date().toISOString();
+    console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 5. Estado calculado pela FSM: state="${finalState}", fluxo="${finalFluxo || 'N/A'}"`);
+
+    const newHistory = [
+      ...history,
+      { role: 'user', content: text },
+      { role: 'assistant', content: finalReply }
+    ];
+
+    try {
+      const updates: any = {
+        history: newHistory,
+        state_fsm: finalState,
+        fluxo_ativo: finalFluxo,
+        score_total: score_percent
+      };
+
+      if (user_data.sofrimento_relatado === undefined || user_data.sofrimento_relatado === null) {
+        updates.sofrimento_relatado = null;
+      }
+
+      console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 6. Payload enviado ao Supabase (fim-AI): step="${this.mapFsmToStep(finalState)}", updates=${JSON.stringify(updates)}`);
+
+      const { data: newMergedData, error } = await this.supabase.rpc('save_session_data', {
+        p_phone: phone,
+        p_step: this.mapFsmToStep(finalState),
+        p_user_data_updates: updates
+      });
+
+      if (error) {
+        console.error(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 7. Falha na persistência (fim-AI): ${JSON.stringify(error)}`);
+        console.error('=== ERRO CRÍTICO NO BANCO ===');
+        console.error(error);
+      } else {
+        console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 7. Confirmação de persistência bem-sucedida (fim-AI). Data retornado: ${JSON.stringify(newMergedData)}`);
+        if (newMergedData) {
+          session.user_data = newMergedData;
+        }
+      }
+
+      const { data: reReadSession } = await this.supabase.from('sofia_sessions').select('*').eq('phone', phone).single();
+      console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 8. Estado relido após save (fim-AI): FSM="${reReadSession?.user_data?.state_fsm}", step="${reReadSession?.step}", user_data=${JSON.stringify(reReadSession?.user_data)}`);
+
+      console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 9. Resposta final enviada ao cliente: "${finalReply}"`);
+      return finalReply;
+    } catch (dbError: any) {
+      console.error('❌ ERRO AO SALVAR DADOS NO BANCO:', dbError.message);
+      console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 9. Resposta final enviada ao cliente (erro banco): "${finalReply}"`);
+      return finalReply;
+    }
+  }
+
+  private async generateTextWithFallback(prompt: string) {
+    const modelsToTry = ["gemini-3.1-flash-lite", "gemini-2.5-flash", "gemini-3.5-flash", "gemini-2.5-pro", "gemini-2.5-flash-lite"];
+    let lastError: any = null;
+
+    for (const modelName of modelsToTry) {
+      let attempt = 1;
+      while (attempt <= 2) {
+        try {
+          console.log(`🤖 Solicitando texto com o modelo ${modelName} (Tentativa ${attempt})...`);
+          const model = this.genAI.getGenerativeModel({ model: modelName }, { apiVersion: "v1" });
+          const result = await model.generateContent(prompt);
+          const text = result.response.text();
+          if (text) {
+            console.log(`✅ Resposta gerada com sucesso pelo modelo ${modelName}!`);
+            return text;
+          }
+        } catch (err: any) {
+          console.warn(`⚠️ Erro no modelo ${modelName} (Tentativa ${attempt}): ${err.message}`);
+          lastError = err;
+          
+          if (err.status === 429 && attempt === 1) {
+            console.log(`⚠️ Limite 429 atingido. Aguardando 10 segundos antes de tentar novamente...`);
+            await new Promise(resolve => setTimeout(resolve, 10000));
+            attempt++;
+          } else {
+            break;
+          }
+        }
+      }
+    }
+
+    throw lastError || new Error("Todos os modelos de texto do Gemini falharam.");
+  }
+
+  private async updateInternalState(phone: string, currentStep: string, userInput: string, aiReply: string) {
+    // Aqui implementamos a lógica de transição de passos baseada na conversa
+    // Por simplicidade agora, apenas atualizamos a última interação
+    await this.supabase.from('sofia_sessions').update({
+      last_interaction: new Date().toISOString()
+    }).eq('phone', phone);
+  }
+
+  private async startSession(phone: string) {
+    const hour = parseInt(new Date().toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', hour12: false }));
+    let saudacao = "Boa noite";
+    if (hour >= 6 && hour < 12) saudacao = "Bom dia";
+    else if (hour >= 12 && hour < 18) saudacao = "Boa tarde";
+    
+    const apresentacao = `${saudacao}! Tudo bem? Sou a Lara, do escritório da Dra. Mônica Lucioli. Me fala seu nome pra eu te chamar certinho`;
+    
+    await this.supabase.from('sofia_sessions').insert([{ 
+        phone, 
+        user_data: { history: [{ role: 'assistant', content: apresentacao }] }
+    }]);
+    
+    return apresentacao;
+  }
+
+  /**
+   * Calcula de forma 100% determinística o próximo estado da FSM
+   * com base nas informações atualmente gravadas na memória da sessão.
+   */
+  resolveFSMState(userData: any): { state: string, fluxo_ativo?: string } {
+    // 1. Coleta e validação do Nome
+    if (!userData?.nome_usuario || String(userData.nome_usuario).trim() === '') {
+      return { state: 'AWAITING_NAME' };
+    }
+
+    // 2. Validação ética de Advogado
+    if (userData.has_law_yer !== undefined) {
+      userData.has_lawyer = userData.has_law_yer;
+    }
+    const history = userData?.history || [];
+    const lawyerQuestionWasAsked = history.some((h: any) =>
+      h.role === 'assistant' &&
+      String(h.content || '').toLowerCase().includes('advogado')
+    );
+    if (userData.has_lawyer === undefined || userData.has_lawyer === null || !lawyerQuestionWasAsked) {
+      return { state: 'AWAITING_LAWYER' };
+    }
+    if (userData.has_lawyer === true || userData.has_lawyer === 'true') {
+      return { state: 'FINISHED' };
+    }
+
+    // 3. Validação da Idade
+    if (userData.idade === undefined || userData.idade === null || String(userData.idade).trim() === '') {
+      return { state: 'AWAITING_AGE' };
+    }
+
+    // 4. Status de Trabalho Atual
+    if (userData.trabalha_atualmente === undefined || userData.trabalha_atualmente === null) {
+      return { state: 'AWAITING_WORK' };
+    }
+
+    // 5. Histórico de Contribuição Previdenciária
+    if (userData.ja_contribuiu === undefined || userData.ja_contribuiu === null) {
+      const hasTempo = userData.inss_tempo_carteira !== undefined && userData.inss_tempo_carteira !== null && String(userData.inss_tempo_carteira).trim() !== '';
+      if (!hasTempo) {
+        return { state: 'AWAITING_CONTRIBUTION' };
+      }
+    }
+
+    // 6. Doença, incapacidade ou limitação de saúde
+    if (userData.tem_doenca_ou_limitacao === undefined || userData.tem_doenca_ou_limitacao === null) {
+      return { state: 'AWAITING_DISEASE' };
+    }
+
+    // --- FASE DE CLASSIFICAÇÃO AUTOMÁTICA DE FLUXO ---
+    const ageNum = this.parseNumber(userData.idade);
+    const contribYears = this.parseNumber(userData.inss_tempo_carteira || userData.tempo_contribuicao);
+    const hasDisease = userData.tem_doenca_ou_limitacao === true || (userData.doenca && String(userData.doenca).toLowerCase() !== 'não' && String(userData.doenca).toLowerCase() !== 'null' && String(userData.doenca).toLowerCase() !== '');
+
+    let fluxo_ativo = userData.fluxo_ativo;
+
+    if (!fluxo_ativo) {
+      const hasAposeText = String(userData.retirement_work_history || "").toLowerCase().includes("aposentar") ||
+                          String(userData.retirement_work_history || "").toLowerCase().includes("aposentadoria") ||
+                          String(userData.inss_como_contribuiu || "").toLowerCase().includes("aposentar") ||
+                          String(userData.inss_como_contribuiu || "").toLowerCase().includes("aposentadoria");
+
+      const jaContribuiu = userData.ja_contribuiu === true || contribYears > 0 || String(userData.ja_contribuiu).toLowerCase().includes('sim') || String(userData.ja_contribuiu).toLowerCase().includes('contribu');
+
+      if (ageNum >= 65 && !jaContribuiu) {
+        fluxo_ativo = 'BPC_IDOSO';
+      } else if (hasDisease && (jaContribuiu || contribYears > 0)) {
+        fluxo_ativo = 'INSS_CONTRIBUTIVO';
+      } else if (hasDisease && !jaContribuiu && ageNum < 65) {
+        fluxo_ativo = 'BPC_DEFICIENTE';
+      } else if (!hasDisease && (ageNum >= 55 || contribYears >= 15 || hasAposeText)) {
+        fluxo_ativo = 'APOSENTADORIA';
+      } else {
+        fluxo_ativo = 'EXCECAO';
+      }
+    }
+
+    if (fluxo_ativo === 'EXCECAO') {
+      return { state: 'FINISHED', fluxo_ativo };
+    }
+
+    // --- FASE DE SUB-FLUXOS ESPECÍFICOS ---
+
+    // Roteiros BPC (Idoso ou Deficiente)
+    if (fluxo_ativo === 'BPC_IDOSO' || fluxo_ativo === 'BPC_DEFICIENTE') {
+      if (userData.bpc_pessoas_casa === undefined || userData.bpc_pessoas_casa === null || String(userData.bpc_pessoas_casa).trim() === '') {
+        return { state: 'BPC_AWAITING_HOUSEHOLD', fluxo_ativo };
+      }
+      if (userData.bpc_quem_renda === undefined || userData.bpc_quem_renda === null || String(userData.bpc_quem_renda).trim() === '') {
+        return { state: 'BPC_AWAITING_HOUSEHOLD_INCOME', fluxo_ativo };
+      }
+      if (userData.bpc_casa_alugada_propria === undefined || userData.bpc_casa_alugada_propria === null || String(userData.bpc_casa_alugada_propria).trim() === '') {
+        return { state: 'BPC_AWAITING_HOME_STATUS', fluxo_ativo };
+      }
+      if (userData.bpc_cad_unico === undefined || userData.bpc_cad_unico === null) {
+        return { state: 'BPC_AWAITING_CADUNICO', fluxo_ativo };
+      }
+      return { state: 'FINISHED', fluxo_ativo };
+    }
+
+    // Roteiro INSS Contributivo
+    if (fluxo_ativo === 'INSS_CONTRIBUTIVO') {
+      if (userData.inss_como_contribuiu === undefined || userData.inss_como_contribuiu === null || String(userData.inss_como_contribuiu).trim() === '') {
+        return { state: 'INSS_AWAITING_EMPLOYMENT_TYPE', fluxo_ativo };
+      }
+      if (userData.inss_ultima_contribuicao === undefined || userData.inss_ultima_contribuicao === null || String(userData.inss_ultima_contribuicao).trim() === '') {
+        return { state: 'INSS_AWAITING_LAST_CONTRIBUTION', fluxo_ativo };
+      }
+      if (userData.inss_laudos_medicos === undefined || userData.inss_laudos_medicos === null) {
+        return { state: 'INSS_AWAITING_REPORTS', fluxo_ativo };
+      }
+      return { state: 'FINISHED', fluxo_ativo };
+    }
+
+    // Roteiro de Aposentadoria
+    if (fluxo_ativo === 'APOSENTADORIA') {
+      if (userData.retirement_work_history === undefined || userData.retirement_work_history === null || String(userData.retirement_work_history).trim() === '') {
+        return { state: 'RETIREMENT_AWAITING_WORK_HISTORY', fluxo_ativo };
+      }
+      if (userData.retirement_special_rural === undefined || userData.retirement_special_rural === null || String(userData.retirement_special_rural).trim() === '') {
+        return { state: 'RETIREMENT_AWAITING_SPECIAL_RURAL', fluxo_ativo };
+      }
+      if (userData.retirement_other_periods === undefined || userData.retirement_other_periods === null || String(userData.retirement_other_periods).trim() === '') {
+        return { state: 'RETIREMENT_AWAITING_OTHER_PERIODS', fluxo_ativo };
+      }
+      return { state: 'FINISHED', fluxo_ativo };
+    }
+
+    return { state: 'FINISHED', fluxo_ativo };
+  }
+
+  private parseNumber(v: any): number {
+    if (!v) return 0;
+    if (typeof v === 'number') return v;
+    const match = String(v).match(/\d+/);
+    return match ? parseInt(match[0], 10) : 0;
+  }
+
+  private mapFsmToStep(state: string): string | null {
+    const s = state.toUpperCase();
+    if (s === 'FINISHED') return 'finished';
+    if (s.includes('CADUNICO') || s.includes('REPORT') || s.includes('DOCS') || s.includes('REPORTS')) return 'docs';
+    if (s.includes('INCOME') || s.includes('WORK') || s.includes('CONTRIB')) return 'income';
+    if (s.includes('AGE')) return 'age';
+    if (s.includes('DISEASE') || s.includes('HOUSEHOLD') || s.includes('STATUS') || s.includes('EMPLOYMENT') || s.includes('SPECIAL') || s.includes('RURAL') || s.includes('PERIODS') || s.includes('HISTORY')) return 'benefit';
+    if (s.includes('NAME') || s.includes('LAWYER')) return 'welcome';
+    return null;
+  }
+}
