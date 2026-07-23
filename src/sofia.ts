@@ -585,10 +585,20 @@ JSON de retorno:`;
 
     // 2. Idade (AWAITING_AGE)
     if (currentState === 'AWAITING_AGE') {
-      const match = clean.match(/\b\d{1,2}\b/);
-      if (match) {
-        data.idade = parseInt(match[0], 10);
+      const words = clean.split(/\s+/);
+      if (words.length <= 4) {
+        const match = clean.match(/\b\d{1,2}\b/);
+        if (match) {
+          data.idade = parseInt(match[0], 10);
+        }
       } else {
+        const matchExplicit = clean.match(/\b(\d{1,2})\s*(?:anos|de idade)\b/i) || clean.match(/\b(?:idade|tenho)\s*(\d{1,2})\b/i);
+        if (matchExplicit) {
+          data.idade = parseInt(matchExplicit[1], 10);
+        }
+      }
+
+      if (!data.idade) {
         if (clean.includes("sessenta e cinco")) data.idade = 65;
         else if (clean.includes("sessenta e seis")) data.idade = 66;
         else if (clean.includes("sessenta e sete")) data.idade = 67;

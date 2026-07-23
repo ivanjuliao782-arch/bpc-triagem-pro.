@@ -258,7 +258,17 @@ export default function App() {
           }
         });
 
-        setLeads(combined);
+        // Garantia de deduplicação estrita por telefone
+        const uniqueLeads: Lead[] = [];
+        const seenPhones = new Set<string>();
+        combined.forEach(lead => {
+          if (lead.phone && !seenPhones.has(lead.phone)) {
+            seenPhones.add(lead.phone);
+            uniqueLeads.push(lead);
+          }
+        });
+
+        setLeads(uniqueLeads);
       }
     } catch (err) {
       console.error('Erro ao buscar leads do Supabase:', err);
