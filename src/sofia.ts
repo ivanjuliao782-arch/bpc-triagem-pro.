@@ -379,6 +379,23 @@ export class SofiaEngine {
       delete mergedData.nome_usuario;
     }
 
+    if (currentState === 'AWAITING_TOTAL_CONTRIBUTION' || currentState === 'AWAITING_CURRENT_CONTRIBUTION') {
+      const mencionaLoas = /\b(recebia loas|recebe loas|recebia bpc|recebe bpc|ja recebia o beneficio|recebia o beneficio)\b/i.test(cleanText);
+      if (mencionaLoas) {
+        mergedData.ja_contribuiu = false;
+        mergedData.esta_contribuindo_atualmente = false;
+        mergedData.tempo_parou_contribuir = 'nunca';
+        mergedData.inss_tempo_carteira = 'nenhum';
+      }
+    }
+
+    if (currentState === 'AWAITING_DISABILITY' || currentState === 'AWAITING_DISEASE') {
+      const mencionaDeficiencia = /\b(tem deficiencia|e deficiente|possui deficiencia|tem uma deficiencia)\b/i.test(cleanText);
+      if (mencionaDeficiencia && (mergedData.tem_deficiencia === undefined || mergedData.tem_deficiencia === null)) {
+        mergedData.tem_deficiencia = true;
+      }
+    }
+
     return mergedData;
   }
 
