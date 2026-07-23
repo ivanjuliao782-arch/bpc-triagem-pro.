@@ -477,8 +477,8 @@ Campos a extrair:
 - inss_tempo_carteira: (string ou null) Tempo trabalhado de carteira assinada ou tempo de contribuição mencionado (ex: "15 anos").
 - bpc_pessoas_casa: (string ou null) Quantidade ou quem são as pessoas que moram com ele.
 - bpc_parentesco: (string ou null) Grau de parentesco das pessoas que moram com ele.
-- bpc_renda_familiar: (boolean ou null) Se o cliente ou alguém na casa dele possui renda, salário, pensão, benefício, aposentadoria ou faz bicos/trabalho informal (true se tiver alguma renda/receber dinheiro/fizer bicos/trabalho, false se disser que não recebe nada, não tem renda ou usar expressões como "quem me dera", e null se não for mencionado).
-- bpc_quem_renda: (string ou null) Quem na casa tem renda e qual o valor.
+- bpc_renda_familiar: (boolean ou null) Se o cliente ou alguém na casa dele possui renda, salário, pensão, benefício, aposentadoria ou faz bicos/trabalho informal (true se tiver alguma renda/receber dinheiro/fizer bicos/trabalho, false se disser que não recebe nada, não tem renda ou usar expressões como "quem me dera", e null se não for mencionado). ATENÇÃO: Ajuda financeira informal, doações ou mesadas de parentes/filhos que NÃO moram na mesma casa NÃO devem ser consideradas renda (retorne false ou null).
+- bpc_quem_renda: (string ou null) Quem na casa tem renda e qual o valor. ATENÇÃO: Se a renda vier de ajuda de parentes/filhos que moram fora da casa, ignore e retorne null.
 - bpc_casa_alugada_propria: (string ou null) Se a casa é alugada, própria, cedida, etc.
 - bpc_cad_unico: (boolean ou string ou null) Se tem Cadastro Único (CadÚnico).
 - inss_foi_autonomo: (boolean ou null) Se trabalhou como autônomo.
@@ -793,6 +793,8 @@ JSON de retorno:`;
     }
 
     // Só tenta detectar um terceiro do zero se não estiver travado E estiver nas etapas de introdução
+    // Desativado por regex puro para evitar falsos positivos de indicação/conversas incidentais. A IA cuida disso com contexto.
+    /*
     const fsmState = session?.user_data?.state_fsm;
     const isInitialState = !fsmState || fsmState === 'AWAITING_NAME' || fsmState === 'AWAITING_LAWYER';
     if (!beneficiarioTerceiro && !session?.user_data?.beneficiario_ja_confirmado && isInitialState) {
@@ -802,6 +804,7 @@ JSON de retorno:`;
         extractedData.beneficiario_terceiro = detectedFamiliar;
       }
     }
+    */
 
     if (!isGreeting) {
       const currentState = session?.user_data?.state_fsm || undefined;
@@ -885,26 +888,36 @@ JSON de retorno:`;
 
     // GUARDA GLOBAL: Se a sessão já está no estado FINISHED, não processa nada - retorna mensagem de encerramento
     if (session && session.user_data?.state_fsm === 'FINISHED' && session.user_data?.status_final !== 'com_advogado') {
+      if (session.user_data?.triagem_encerrada_msg_enviada) {
+        console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] GUARDA GLOBAL FINISHED: Mensagem de encerramento já foi enviada. Ignorando silenciosamente.`);
+        return null;
+      }
+
       const cleanText = text.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
       const isThanks = /\b(obrigad|valeu|agradec|tks|thanks|obg)\b/i.test(cleanText);
       if (isThanks) {
         const respostaAgradecimento = "De nada, daqui alguns minutos um profissional entrará em contato com você.";
         console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] GUARDA GLOBAL FINISHED (AGRADECIMENTO): Retornando retribuição.`);
         console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 9. Resposta final enviada ao cliente: "${respostaAgradecimento}"`);
-        return respostaAgradecimento;
-      }
-      
-      let respostaFinal = `Com base no que você me contou nossa equipe vai analisar melhor o seu caso. Assim que possível entraremos em contato novamente`;
-      if (session.user_data?.triagem_encerrada_msg_enviada) {
-        respostaFinal = "Essa parte específica só a nossa equipe consegue confirmar depois de analisar seu caso com calma — mas já registrei sua pergunta pra eles. Assim que tivermos uma resposta, entramos em contato.";
-      } else {
+        
+        // Marca como enviado também para não responder nem a agradecimentos futuros
         const updates = { triagem_encerrada_msg_enviada: true };
         await this.supabase.rpc('save_session_data', {
           p_phone: phone,
           p_step: 'finished',
           p_user_data_updates: updates
         });
+        
+        return respostaAgradecimento;
       }
+      
+      const respostaFinal = `Com base no que você me contou nossa equipe vai analisar melhor o seu caso. Assim que possível entraremos em contato novamente`;
+      const updates = { triagem_encerrada_msg_enviada: true };
+      await this.supabase.rpc('save_session_data', {
+        p_phone: phone,
+        p_step: 'finished',
+        p_user_data_updates: updates
+      });
 
       console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] GUARDA GLOBAL FINISHED: sessão já encerrada. Retornando mensagem de handoff.`);
       console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 9. Resposta final enviada ao cliente: "${respostaFinal}"`);
@@ -1629,7 +1642,7 @@ DIRETRIZES DE COMUNICAÇÃO E REGRAS DE NEGÓCIO (OBRIGATÓRIO):
 10. PROIBIDO AJUDA INFORMAL EXTERNA (AMIGOS/VIZINHOS/DOAÇÕES): É terminantemente proibido perguntar se o cliente recebe ajuda informal, doações, cesta básica ou auxílios informais de amigos, vizinhos ou parentes de fora. Essa pergunta NÃO faz parte do fluxo do BPC. ATENÇÃO: Esta proibição se refere apenas a auxílios informais externos. É OBRIGATÓRIO e legítimo perguntar sobre a renda formal ou trabalho dos moradores que residem na mesma casa (salário, aposentadoria, pensão, benefício) quando estiver no estado BPC_AWAITING_HOUSEHOLD_INCOME.
 11. DESVIOS DE ASSUNTO E OFF-TOPIC: Caso o usuário mude de assunto, faça reclamações sobre o governo ou INSS, faça perguntas pessoais (como "qual seu nome?", "quem é você?") ou diga coisas fora da triagem, dê uma resposta extremamente curta de empatia ou esclarecimento (1 única frase curta, variando os termos para nunca parecer repetitiva, ex: "Entendo a sua preocupação", "Te compreendo", etc.) e em seguida retorne para a pergunta base abaixo.
 12. SIMPLIFICAÇÃO DA PERGUNTA DE ADVOGADO: Se a pergunta base for sobre advogado, reescreva-a SEMPRE usando linguagem extremamente simples e acessível para idosos, como 'Você já tem advogado cuidando do seu caso?' ou 'Já tem advogado te ajudando?'. É TERMINANTEMENTE PROIBIDO usar termos complexos como 'representando você nesse processo' ou 'representação legal'.
-13. RECONHECIMENTO CONTEXTUAL OBRIGATÓRIO (CRÍTICO): Antes de fazer a pergunta seguinte, você DEVE sempre demonstrar que entendeu e prestou atenção na última mensagem do cliente — mesmo que seja curta, uma dúvida, um comentário ou apenas uma resposta direta. É TERMINANTEMENTE PROIBIDO ignorar o que o cliente disse e simplesmente emendar a próxima pergunta de forma seca e desconectada, como se fosse um robô que não leu a mensagem anterior. Se a última mensagem do cliente contiver uma pergunta, dúvida ou comentário (de qualquer forma que seja escrito), responda em 1 frase curta e humana reconhecendo isso ANTES de fazer a próxima pergunta. Se for apenas uma resposta direta sem nada embutido, ainda assim é permitido reconhecer brevemente antes de seguir, mas sem se alongar.
+13. RECONHECIMENTO CONTEXTUAL OBRIGATÓRIO (CRÍTICO): Antes de fazer a pergunta seguinte, você DEVE sempre demonstrar que entendeu e prestou atenção na última mensagem do cliente — mesmo que seja curta, uma dúvida, um comentário ou apenas uma resposta direta. É TERMINANTEMENTE PROIBIDO ignorar o que o cliente disse e simplesmente emendar a próxima pergunta de forma seca e desconectada, como se fosse um robô que não leu a mensagem anterior. Se a última mensagem do cliente contiver uma pergunta, dúvida ou comentário (de qualquer forma que seja escrito), responda em 1 frase curta e humana reconhecendo isso ANTES de fazer a próxima pergunta. Se for apenas uma resposta direta sem nada embutido, ainda assim é permitido reconhecer brevemente antes de seguir, mas sem se alongar. ATENÇÃO: É terminantemente proibido repetir, ecoar ou colar trechos literais da mensagem do cliente na sua fala (por exemplo, se o cliente disser "ela se chama Lucimar", não repita "ela se chama Lucimar" na sua resposta). Apenas reconheça de forma muito natural e faça a pergunta correspondente.
 
 
 DIRETRIZ CRÍTICA DE HUMANIZAÇÃO COM CONTEXTO:
