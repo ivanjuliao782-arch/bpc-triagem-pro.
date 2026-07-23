@@ -2274,6 +2274,13 @@ Gere a resposta da Lara (retorne APENAS o texto reescrito da pergunta base, sem 
       if (userData.bpc_cad_unico === undefined || userData.bpc_cad_unico === null) {
         return { state: 'BPC_AWAITING_CADUNICO', fluxo_ativo };
       }
+
+      // Para BPC Deficiente, também pergunta sobre laudos médicos para provar a deficiência
+      if (fluxo_ativo === 'BPC_DEFICIENTE') {
+        if (userData.inss_laudos_medicos === undefined || userData.inss_laudos_medicos === null) {
+          return { state: 'INSS_AWAITING_REPORTS', fluxo_ativo };
+        }
+      }
       
       // Todas as perguntas de BPC respondidas! Se chegou aqui e não desqualificou, qualifica BPC!
       return { state: 'FINISHED', fluxo_ativo };
