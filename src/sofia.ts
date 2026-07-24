@@ -56,7 +56,7 @@ const STATE_QUESTIONS: Record<string, string[]> = {
     "Você trabalhava de carteira assinada ou por conta própria?"
   ],
   INSS_AWAITING_LAST_CONTRIBUTION: [
-    "Tem quanto tempo que você se afastou? Foi em que ano?"
+    "Você já precisou se afastar do trabalho por causa dessa doença ou continua trabalhando mesmo com dor?"
   ],
   INSS_AWAITING_REPORTS: [
     "Você possui exames, receitas ou laudos médicos recentes?"
@@ -451,6 +451,24 @@ export class SofiaEngine {
     return /\b(onde fica|onde e|onde voce e|voce e de onde|voces sao de onde|de onde voce e|de onde voces sao|de onde e a doutora|onde a doutora fica|onde fica a doutora|cade voces|onde vocês|endereco|localizacao|onde ficam|onde voces ficam|onde voces atendem|onde voce atende|qual endereco|onde fica o escritorio|onde fica seu escritorio|onde fica o consultorio|em que cidade voces ficam|em que cidade voce fica|qual cidade voces ficam|onde e o escritorio)\b/i.test(cleanText);
   }
 
+  limparEcoPerguntas(text: string): string {
+    let cleanText = text;
+    // 1. Remove saudações personalizadas comuns da Lara com quebra de linha ou espaço
+    cleanText = cleanText.replace(/Prazer,?\s+\w+!?,?\s*(?:Sinto muito que esteja passando por isso\.)?/gi, '');
+    cleanText = cleanText.replace(/Me chamo Lara,?\s+atendente do escritório da Dra\.\s+Mônica Lucioli\./gi, '');
+    cleanText = cleanText.replace(/Olá!?,?\s*(?:seja bem-vindo\(a\)|Tudo bem\?)?/gi, '');
+    
+    // 2. Remove frases exatas de perguntas cadastradas na FSM
+    for (const questions of Object.values(STATE_QUESTIONS)) {
+      for (const question of questions) {
+        const escaped = question.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+        const regex = new RegExp(escaped, 'gi');
+        cleanText = cleanText.replace(regex, '');
+      }
+    }
+    return cleanText.replace(/^\s+|\s+$/g, '').trim();
+  }
+
   async runExtraction(text: string, currentState?: string): Promise<any> {
     const prompt = `Você é um extrator de dados de texto especializado em triagem previdenciária.
 Sua única tarefa é analisar o texto enviado pelo cliente e extrair todas as informações preenchidas para os campos especificados abaixo.
@@ -483,7 +501,7 @@ Campos a extrair:
 - bpc_cad_unico: (boolean ou string ou null) Se tem Cadastro Único (CadÚnico).
 - inss_foi_autonomo: (boolean ou null) Se trabalhou como autônomo.
 - inss_como_contribuiu: (string ou null) Como contribuiu (carnê, carteira assinada, etc.).
-- inss_ultima_contribuicao: (string ou null) Informação sobre se e quando contribuiu ou pagou carnê do INSS nos últimos 5 anos (ex: "paguei ano passado", "há 3 anos atrás", "não paguei nos últimos 5 anos").
+- inss_ultima_contribuicao: (string ou null) Informação sobre se e quando contribuiu ou pagou carnê do INSS nos últimos 5 anos (ex: "paguei ano passado", "há 3 anos atrás", "não paguei nos últimos 5 anos", ou se disser que continua trabalhando e não se afastou, retorne "Trabalhando atualmente").
 - inss_laudos_medicos: (boolean ou null) Se possui exames ou laudos médicos.
 - inss_data_laudo: (string ou null) Data do laudo médico.
 - has_recent_report: (boolean ou null) Se o laudo médico é recente (últimos meses).
@@ -770,8 +788,15 @@ JSON de retorno:`;
 
     if (!text) return "Desculpe, não consegui entender o seu áudio. Pode repetir ou digitar?";
 
+    // Limpa qualquer citação/eco das próprias perguntas da Lara antes de processar
+    text = this.limparEcoPerguntas(text);
+    if (!text || text.trim() === '') {
+      console.log(`[INSTRUMENTAÇÃO] [Lead: ${phone}] ⚠️ Mensagem ignorada: continha apenas ecos de perguntas.`);
+      return null;
+    }
+
     const timestamp = new Date().toISOString();
-    console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 1. Mensagem recebida: "${text}"`);
+    console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 1. Mensagem recebida sanitizada: "${text}"`);
 
     const isGreeting = this.isSimpleGreeting(text);
     let { data: session } = await this.supabase.from('sofia_sessions').select('*').eq('phone', phone).single();
