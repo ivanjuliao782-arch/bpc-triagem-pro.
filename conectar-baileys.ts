@@ -302,7 +302,7 @@ async function connectToWhatsApp() {
                         ? msg.messageTimestamp 
                         : (msg.messageTimestamp?.low || 0);
 
-                    if (msgTime < startupTime - 15 || nowSeconds - msgTime > 60) {
+                    if (msgTime < startupTime - 15 || nowSeconds - msgTime > 3600) {
                         console.log(`ℹ️ Ignorando mensagem histórica/antiga de ${from} (enviada há ${nowSeconds - msgTime}s)`);
                         continue;
                     }
