@@ -83,7 +83,22 @@ O dashboard trata o status e o score do lead de forma diferenciada dependendo da
 
 ---
 
-## 4. Comandos de Compilação e Implantação
+## 4. Garantia de Sincronização e Anti-Duplicação
+Para evitar instabilidades visuais causadas por concorrência de rede ou acumulação de loops de polling de HMR no React:
+*   **Deduplicação por Telefone**: Na função `fetchLeads`, o frontend aplica um filtro estrito sobre o array resultante consolidado. Ele garante que cada número de telefone (`lead.phone`) seja adicionado exatamente uma vez na lista exibida no funil Kanban.
+*   **Moradia Solitária e Parentesco**: Se o lead reside sozinho (mora só), o campo `bpc_parentesco` fica naturalmente vazio (exibido como "Não informado"), sendo o reflexo exato da sua composição familiar legal para o BPC.
+
+---
+
+## 5. Fluxo de Assumir Lead (Mutamento do Robô)
+Quando um operador clica na opção **"Assumir Lead"**:
+1.  O status do lead é atualizado localmente e persistido no Supabase via RPC (`save_session_data`) com `status: 'em_atendimento'` e operador atribuído.
+2.  **Guarda de Atendimento Humano**: O robô WhatsApp (`sofia.ts`) intercepta essa flag no banco de dados. Caso `status === 'em_atendimento'`, a Lara silencia automaticamente (`return null`) para todas as mensagens subsequentes enviadas por aquele lead.
+3.  Isso garante que o atendente humano possa prosseguir com a conversa de forma direta pelo aplicativo móvel ou WhatsApp Web sem que as respostas automatizadas entrem em concorrência.
+
+---
+
+## 6. Comandos de Compilação e Implantação
 Para fazer alterações no dashboard e testá-lo:
 
 1.  **Verificar Tipos e Compilação**:

@@ -38,6 +38,7 @@ A conversa é guiada de forma determinística por estados em `src/sofia.ts`.
 Com base nos dados acumulados, a FSM decide dinamicamente o fluxo do lead na conclusão da triagem geral:
 *   **Aposentadoria** (Idade + Contribuição suficiente): Direciona para o roteiro de histórico detalhado de trabalho (`RETIREMENT_AWAITING_WORK_HISTORY`, `RETIREMENT_AWAITING_SPECIAL_RURAL`).
 *   **BPC/LOAS** (Idoso $\ge 65$ ou Deficiente sem contribuição): Direciona para perguntas de assistência social (`BPC_AWAITING_HOUSEHOLD`, `BPC_AWAITING_HOUSEHOLD_INCOME`, `BPC_AWAITING_HOME_STATUS`, `BPC_AWAITING_CADUNICO`).
+    *   *Especialidade BPC Deficiente*: Para o fluxo de `BPC_DEFICIENTE` (idade < 65 com deficiência), após a pergunta de CadÚnico, o robô faz uma pergunta extra de laudo/exames médicos (`INSS_AWAITING_REPORTS`) para garantir a comprovação médica da deficiência necessária para a perícia do INSS.
 *   **INSS Contributivo**: Direciona para perguntas de laudos médicos e recolhimento (`INSS_AWAITING_EMPLOYMENT_TYPE`, `INSS_AWAITING_LAST_CONTRIBUTION`, `INSS_AWAITING_REPORTS`).
 
 ---
@@ -45,8 +46,10 @@ Com base nos dados acumulados, a FSM decide dinamicamente o fluxo do lead na con
 ## 2. Extração Híbrida de Informações e Fallbacks
 O robô processa as respostas recebidas de forma híbrida:
 1.  **Código Puro (RegEx)**: Verifica padrões e respostas curtas comuns (ex: *"sim"*, *"não"*, *"só INSS"*, números para idade/tempo de contribuição) para fornecer respostas instantâneas de baixíssimo custo.
-2.  **Trava de Mensagem Longa (> 20 palavras)**: Se a mensagem do cliente tiver mais de 20 palavras (contadas por quebras de espaço), o sistema **força o fallback de IA** mesmo que um RegEx binário curto seja acionado. Isso garante que informações complexas (como *"Não assinei contrato, mas trabalhei 26 anos e tenho artrose"*) não sejam perdidas.
-3.  **Sincronização de Scores em RegEx**: Toda vez que uma resposta é resolvida por código puro/RegEx, o motor do robô recalcula o `score_total` do lead usando a biblioteca centralizada (`src/lib/score.ts`) e o persiste no Supabase. Isso resolve a latência de pontuações de leads recuperáveis.
+2.  **Qualificação de Idade Inteligente**: Para mensagens curtas (até 4 palavras), aceita números isolados como idade (ex: *"64"*). Para mensagens longas (> 4 palavras), o sistema exige obrigatoriamente qualificadores textuais (como *"anos"*, *"de idade"*, *"tenho X"*, *"idade X"*) para evitar confundir a idade com tempos e prazos relatados pelo cliente (ex: *"1 ano sem receber"*).
+3.  **Auto-Detecção de Beneficiário Anterior (LOAS/BPC e Deficiência)**: No analisador de código puro (`sanitizeExtractedData`), caso o cliente afirme diretamente que já recebia LOAS/BPC ou que possui alguma deficiência, o sistema preenche previamente as variáveis de contribuição (definindo `ja_contribuiu: false`, `esta_contribuindo_atualmente: false`, `tempo_parou_contribuir: 'nunca'`) e de saúde, avançando o robô automaticamente para as próximas fases correspondentes, sem repetir perguntas cujas respostas já foram implicitamente dadas.
+4.  **Trava de Mensagem Longa (> 20 palavras)**: Se a mensagem do cliente tiver mais de 20 palavras, o sistema força o fallback de IA.
+5.  **Sincronização de Scores em RegEx**: Toda vez que uma resposta é resolvida por código puro/RegEx, o motor do robô recalcula o `score_total` do lead usando a biblioteca centralizada (`src/lib/score.ts`) e o persiste no Supabase.
 
 ---
 
@@ -57,7 +60,14 @@ Existe um detector determinístico de perguntas sobre endereço e localização:
 
 ---
 
-## 4. Rotina de Follow-up (Inatividade)
+## 4. Guarda de Silenciamento de Triagem Finalizada
+Para evitar que o robô envie mensagens repetidas de encerramento quando o cliente responde com agradecimentos (ex: *"obrigado"*, *"tá bem"*, *"ok"*):
+*   Após o robô enviar a mensagem de encerramento no estado `FINISHED`, é definida a flag `triagem_encerrada_msg_enviada: true` no banco de dados.
+*   Qualquer mensagem recebida do usuário após a ativação desta flag faz com que o robô retorne silenciosamente `null`, ignorando a mensagem e deixando o canal livre para a equipe de atendimento humano do CRM.
+
+---
+
+## 5. Rotina de Follow-up (Inatividade)
 O arquivo `conectar-baileys.ts` roda uma rotina periódica integrada ao WhatsApp:
 *   **Check de Inatividade**: Varre sessões ativas a cada 1 minuto.
 *   **Mensagem (72 horas)**: Envia um follow-up persuasivo com saudação baseada no horário de Brasília + Nome do cliente.
