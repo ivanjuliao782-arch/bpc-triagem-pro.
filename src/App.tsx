@@ -646,8 +646,8 @@ export default function App() {
         </header>
 
         {/* 2. CONTEÚDO PRINCIPAL (DASHBOARD) */}
-        <main className={`flex-1 min-h-0 p-8 custom-scrollbar ${
-          (activeTab === 'dashboard' || activeTab === 'leads') ? 'overflow-hidden flex flex-col' : 'overflow-y-auto'
+        <main className={`flex-1 min-h-0 p-4 md:p-8 custom-scrollbar ${
+          (activeTab === 'dashboard' || activeTab === 'leads') ? 'overflow-y-auto md:overflow-hidden flex flex-col' : 'overflow-y-auto'
         }`}>
           
           {/* TAB 1: KANBAN PRINCIPAL */}
@@ -1720,7 +1720,7 @@ function KPICard({ label, value, trend, icon, color, onClick }: { label: string;
 
 function KanbanColumn({ title, count, children }: { title: string; count: number; children: React.ReactNode }) {
   return (
-    <div className="w-80 shrink-0 flex flex-col h-full min-h-0">
+    <div className="w-80 shrink-0 flex flex-col h-[500px] md:h-full min-h-0">
       <div className="flex justify-between items-center mb-4 px-2 select-none">
         <h3 className="text-xs font-bold tracking-wider text-gray-400 uppercase">{title}</h3>
         <span className="w-5 h-5 bg-[#12121A] text-gray-400 flex items-center justify-center text-[10px] font-bold rounded-lg border border-gray-800">{count}</span>
