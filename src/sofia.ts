@@ -451,6 +451,11 @@ export class SofiaEngine {
     return /\b(onde fica|onde e|onde voce e|voce e de onde|voces sao de onde|de onde voce e|de onde voces sao|de onde e a doutora|onde a doutora fica|onde fica a doutora|cade voces|onde vocês|endereco|localizacao|onde ficam|onde voces ficam|onde voces atendem|onde voce atende|qual endereco|onde fica o escritorio|onde fica seu escritorio|onde fica o consultorio|em que cidade voces ficam|em que cidade voce fica|qual cidade voces ficam|onde e o escritorio)\b/i.test(cleanText);
   }
 
+  detectarPerguntaValor(text: string): boolean {
+    const cleanText = text.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    return /\b(quanto cobra|quanto e|quanto custa|valor|preco|custo|taxa|honorario|paga|pagar|pagamento|pagamentos|cobranca|cobrancas|cobra quanto|qual o valor|quais os valores|tem que pagar|pegar pelo|pegar para|pegar por|e de graca|e gratuito)\b/i.test(cleanText);
+  }
+
   limparEcoPerguntas(text: string): string {
     let cleanText = text;
     // 1. Remove saudações personalizadas comuns da Lara com quebra de linha ou espaço
@@ -808,6 +813,225 @@ JSON de retorno:`;
       return null;
     }
 
+    const user_data = session?.user_data || {};
+    const stateFsm = user_data.state_fsm || 'AWAITING_NAME';
+    const history = user_data.history || [];
+    const resolved = this.resolveFSMState(user_data);
+
+    // GUARDA DETERMINÍSTICO PARA ENDEREÇO
+    if (this.detectarPerguntaEndereco(text)) {
+      const nome = user_data.nome_usuario ? `, ${user_data.nome_usuario}` : "";
+      const familiar = user_data.beneficiario_terceiro;
+      
+      // Pega a pergunta correspondente ao estado atual
+      let dryQuestion = "";
+      if (stateFsm === 'AWAITING_NAME') {
+        dryQuestion = "Boa tarde! Tudo bem?\nMe chamo Lara, sou atendente do escritório da Dra. Mônica Lucioli. Com quem eu falo?";
+      } else if (resolved.fluxo_ativo === 'EXCECAO') {
+        dryQuestion = EXCECAO_QUESTIONS[Math.floor(Math.random() * EXCECAO_QUESTIONS.length)];
+      } else {
+        let questionsList = STATE_QUESTIONS[stateFsm];
+        if (stateFsm === 'BPC_AWAITING_HOUSEHOLD_INCOME') {
+          const moraSozinho = user_data.bpc_pessoas_casa && (
+            String(user_data.bpc_pessoas_casa).toLowerCase().includes('sozinh') ||
+            String(user_data.bpc_pessoas_casa).toLowerCase().includes('moro só') ||
+            String(user_data.bpc_pessoas_casa).toLowerCase().includes('moro so') ||
+            String(user_data.bpc_pessoas_casa).toLowerCase().includes('apenas eu') ||
+            String(user_data.bpc_pessoas_casa).toLowerCase().includes('somente eu') ||
+            String(user_data.bpc_pessoas_casa).toLowerCase() === 'eu' ||
+            String(user_data.bpc_pessoas_casa).toLowerCase().includes('1 pessoa') ||
+            String(user_data.bpc_pessoas_casa).toLowerCase().includes('uma pessoa')
+          );
+          if (moraSozinho) {
+            questionsList = ["Você recebe algum dinheiro? Bolsa família, pensão, aposentadoria ou alguma outra renda?"];
+          }
+        }
+        dryQuestion = questionsList ? questionsList[Math.floor(Math.random() * questionsList.length)] : "";
+      }
+
+      // Se houver familiar, adapta
+      if (familiar) {
+        const fem = ['filha', 'esposa', 'mãe', 'neta', 'irmã', 'avó', 'tia', 'sogra', 'sobrinha', 'nora', 'enteada', 'companheira'].includes(familiar.toLowerCase());
+        const art = fem ? 'A sua' : 'O seu';
+        const artLC = fem ? 'sua' : 'seu';
+        const prep = fem ? 'da' : 'do';
+        const pron = fem ? 'ela' : 'ele';
+        const pronPoss = fem ? 'dela' : 'dele';
+
+        if (stateFsm === 'AWAITING_LAWYER') {
+          dryQuestion = `${art} ${familiar} já tem advogado cuidando do caso?`;
+        } else if (stateFsm === 'LAWYER_CHECK_ACTION') {
+          dryQuestion = `Esse advogado já entrou com ação na Justiça em nome ${prep} ${artLC} ${familiar} ou só deu entrada no INSS?`;
+        } else if (stateFsm === 'LAWYER_CHECK_CONTRACT') {
+          dryQuestion = `${art} ${familiar} chegou a assinar contrato com esse advogado?`;
+        } else if (stateFsm === 'LAWYER_CHECK_PROCURACAO') {
+          dryQuestion = `${art} ${familiar} assinou procuração para esse advogado representar ${pron}?`;
+        } else if (stateFsm === 'AWAITING_AGE') {
+          dryQuestion = `Qual a idade ${prep} ${artLC} ${familiar}?`;
+        } else if (stateFsm === 'AWAITING_DISEASE') {
+          dryQuestion = `${art} ${familiar} tem alguma doença atualmente?`;
+        } else if (stateFsm === 'AWAITING_DISABILITY') {
+          dryQuestion = `${art} ${familiar} tem alguma deficiência?`;
+        } else if (stateFsm === 'AWAITING_TOTAL_CONTRIBUTION') {
+          dryQuestion = `${art} ${familiar} já trabalhou de carteira assinada ou contribuiu para o INSS?`;
+        } else if (stateFsm === 'AWAITING_CURRENT_CONTRIBUTION') {
+          dryQuestion = `Como está a rotina de trabalho ${prep} ${artLC} ${familiar} hoje em dia? ${pron.toUpperCase()} está conseguindo trabalhar?`;
+        } else if (stateFsm === 'AWAITING_LAST_CONTRIBUTION_TIME') {
+          dryQuestion = `Tem quanto tempo que ${art.toLowerCase()} ${familiar} se afastou ou parou de trabalhar?`;
+        } else if (stateFsm === 'INSS_AWAITING_EMPLOYMENT_TYPE') {
+          dryQuestion = `Como ${art.toLowerCase()} ${familiar} contribuía para o INSS? Era por carteira assinada, carnê ou MEI?`;
+        } else if (stateFsm === 'INSS_AWAITING_LAST_CONTRIBUTION') {
+          dryQuestion = `Tem quanto tempo que ${art.toLowerCase()} ${familiar} se afastou? Foi em que ano?`;
+        } else if (stateFsm === 'INSS_AWAITING_REPORTS') {
+          dryQuestion = `${art} ${familiar} possui exames, receitas ou laudos médicos recentes?`;
+        } else if (stateFsm === 'BPC_AWAITING_HOUSEHOLD') {
+          dryQuestion = `Quem mora com ${art.toLowerCase()} ${familiar} na casa ${pronPoss} hoje?`;
+        } else if (stateFsm === 'BPC_AWAITING_HOUSEHOLD_INCOME') {
+          dryQuestion = `Das pessoas que moram com ${art.toLowerCase()} ${familiar}, alguém trabalha ou recebe algum dinheiro?`;
+        } else if (stateFsm === 'BPC_AWAITING_HOME_STATUS') {
+          dryQuestion = `A casa ${prep} ${artLC} ${familiar} é própria, alugada ou cedida?`;
+        } else if (stateFsm === 'BPC_AWAITING_CADUNICO') {
+          dryQuestion = `${art} ${familiar} possui CadÚnico atualizado?`;
+        }
+      }
+
+      // Se o estado for AWAITING_AGE e is_recoverable for true, usa a pergunta otimizada comercialmente!
+      const transitionAlreadySent = history.some((h: any) => h.role === 'assistant' && h.content.includes("é bem comum o pedido ficar só no INSS mesmo"));
+      if (stateFsm === 'AWAITING_AGE' && user_data.is_recoverable === true && !transitionAlreadySent) {
+        if (familiar) {
+          const fem = ['filha', 'esposa', 'mãe', 'neta', 'irmã', 'avó', 'tia', 'sogra', 'sobrinha', 'nora', 'enteada', 'companheira'].includes(familiar.toLowerCase());
+          const art = fem ? 'a sua' : 'o seu';
+          const artLC = fem ? 'sua' : 'seu';
+          const prep = fem ? 'da' : 'do';
+          dryQuestion = `Entendi${nome}. Nesse caso é bem comum o pedido ficar só no INSS mesmo e acabar demorando ou sendo negado.\n\nAqui no escritório a gente analisa justamente se existe uma forma mais rápida ou segura de conseguir esse benefício para ${art} ${familiar}.\n\nPra eu te orientar melhor, qual a idade ${prep} ${artLC} ${familiar}?`;
+        } else {
+          dryQuestion = `Entendi${nome}. Nesse caso é bem comum o pedido ficar só no INSS mesmo e acabar demorando ou sendo negado.\n\nAqui no escritório a gente analisa justamente se existe uma forma mais rápida ou segura de conseguir esse benefício.\n\nPra eu te orientar melhor, qual a sua idade?`;
+        }
+      }
+
+      const reply = `Nosso escritório fica localizado na Avenida Cardoso Saraiva, 688, Matias Barbosa MG. Atendimento presencial em Matias e Juiz de Fora.\n\nAtendemos on-line em todo Brasil.\n\n${dryQuestion}`;
+      const newHistory = [...history, { role: 'user', content: text }, { role: 'assistant', content: reply }];
+
+      await this.supabase.rpc('save_session_data', {
+        p_phone: phone,
+        p_step: session?.step || 'welcome',
+        p_user_data_updates: {
+          history: newHistory,
+          state_fsm: stateFsm
+        }
+      });
+
+      console.log(`[INSTRUMENTAÇÃO] [${new Date().toISOString()}] [Lead: ${phone}] 9. Resposta de endereço enviada: "${reply}"`);
+      return reply;
+    }
+
+    // GUARDA DETERMINÍSTICO PARA VALOR / HONORÁRIOS
+    if (this.detectarPerguntaValor(text)) {
+      const nome = user_data.nome_usuario ? `, ${user_data.nome_usuario}` : "";
+      const familiar = user_data.beneficiario_terceiro;
+      
+      // Pega a pergunta correspondente ao estado atual
+      let dryQuestion = "";
+      if (stateFsm === 'AWAITING_NAME') {
+        dryQuestion = "Boa tarde! Tudo bem?\nMe chamo Lara, sou atendente do escritório da Dra. Mônica Lucioli. Com quem eu falo?";
+      } else if (resolved.fluxo_ativo === 'EXCECAO') {
+        dryQuestion = EXCECAO_QUESTIONS[Math.floor(Math.random() * EXCECAO_QUESTIONS.length)];
+      } else {
+        let questionsList = STATE_QUESTIONS[stateFsm];
+        if (stateFsm === 'BPC_AWAITING_HOUSEHOLD_INCOME') {
+          const moraSozinho = user_data.bpc_pessoas_casa && (
+            String(user_data.bpc_pessoas_casa).toLowerCase().includes('sozinh') ||
+            String(user_data.bpc_pessoas_casa).toLowerCase().includes('moro só') ||
+            String(user_data.bpc_pessoas_casa).toLowerCase().includes('moro so') ||
+            String(user_data.bpc_pessoas_casa).toLowerCase().includes('apenas eu') ||
+            String(user_data.bpc_pessoas_casa).toLowerCase().includes('somente eu') ||
+            String(user_data.bpc_pessoas_casa).toLowerCase() === 'eu' ||
+            String(user_data.bpc_pessoas_casa).toLowerCase().includes('1 pessoa') ||
+            String(user_data.bpc_pessoas_casa).toLowerCase().includes('uma pessoa')
+          );
+          if (moraSozinho) {
+            questionsList = ["Você recebe algum dinheiro? Bolsa família, pensão, aposentadoria ou alguma outra renda?"];
+          }
+        }
+        dryQuestion = questionsList ? questionsList[Math.floor(Math.random() * questionsList.length)] : "";
+      }
+
+      // Se houver familiar, adapta
+      if (familiar) {
+        const fem = ['filha', 'esposa', 'mãe', 'neta', 'irmã', 'avó', 'tia', 'sogra', 'sobrinha', 'nora', 'enteada', 'companheira'].includes(familiar.toLowerCase());
+        const art = fem ? 'A sua' : 'O seu';
+        const artLC = fem ? 'sua' : 'seu';
+        const prep = fem ? 'da' : 'do';
+        const pron = fem ? 'ela' : 'ele';
+        const pronPoss = fem ? 'dela' : 'dele';
+
+        if (stateFsm === 'AWAITING_LAWYER') {
+          dryQuestion = `${art} ${familiar} já tem advogado cuidando do caso?`;
+        } else if (stateFsm === 'LAWYER_CHECK_ACTION') {
+          dryQuestion = `Esse advogado já entrou com ação na Justiça em nome ${prep} ${artLC} ${familiar} ou só deu entrada no INSS?`;
+        } else if (stateFsm === 'LAWYER_CHECK_CONTRACT') {
+          dryQuestion = `${art} ${familiar} chegou a assinar contrato com esse advogado?`;
+        } else if (stateFsm === 'LAWYER_CHECK_PROCURACAO') {
+          dryQuestion = `${art} ${familiar} assinou procuração para esse advogado representar ${pron}?`;
+        } else if (stateFsm === 'AWAITING_AGE') {
+          dryQuestion = `Qual a idade ${prep} ${artLC} ${familiar}?`;
+        } else if (stateFsm === 'AWAITING_DISEASE') {
+          dryQuestion = `${art} ${familiar} tem alguma doença atualmente?`;
+        } else if (stateFsm === 'AWAITING_DISABILITY') {
+          dryQuestion = `${art} ${familiar} tem alguma deficiência?`;
+        } else if (stateFsm === 'AWAITING_TOTAL_CONTRIBUTION') {
+          dryQuestion = `${art} ${familiar} já trabalhou de carteira assinada ou contribuiu para o INSS?`;
+        } else if (stateFsm === 'AWAITING_CURRENT_CONTRIBUTION') {
+          dryQuestion = `Como está a rotina de trabalho ${prep} ${artLC} ${familiar} hoje em dia? ${pron.toUpperCase()} está conseguindo trabalhar?`;
+        } else if (stateFsm === 'AWAITING_LAST_CONTRIBUTION_TIME') {
+          dryQuestion = `Tem quanto tempo que ${art.toLowerCase()} ${familiar} se afastou ou parou de trabalhar?`;
+        } else if (stateFsm === 'INSS_AWAITING_EMPLOYMENT_TYPE') {
+          dryQuestion = `Como ${art.toLowerCase()} ${familiar} contribuía para o INSS? Era por carteira assinada, carnê ou MEI?`;
+        } else if (stateFsm === 'INSS_AWAITING_LAST_CONTRIBUTION') {
+          dryQuestion = `Tem quanto tempo que ${art.toLowerCase()} ${familiar} se afastou? Foi em que ano?`;
+        } else if (stateFsm === 'INSS_AWAITING_REPORTS') {
+          dryQuestion = `${art} ${familiar} possui exames, receitas ou laudos médicos recentes?`;
+        } else if (stateFsm === 'BPC_AWAITING_HOUSEHOLD') {
+          dryQuestion = `Quem mora com ${art.toLowerCase()} ${familiar} na casa ${pronPoss} hoje?`;
+        } else if (stateFsm === 'BPC_AWAITING_HOUSEHOLD_INCOME') {
+          dryQuestion = `Das pessoas que moram com ${art.toLowerCase()} ${familiar}, alguém trabalha ou recebe algum dinheiro?`;
+        } else if (stateFsm === 'BPC_AWAITING_HOME_STATUS') {
+          dryQuestion = `A casa ${prep} ${artLC} ${familiar} é própria, alugada ou cedida?`;
+        } else if (stateFsm === 'BPC_AWAITING_CADUNICO') {
+          dryQuestion = `${art} ${familiar} possui CadÚnico atualizado?`;
+        }
+      }
+
+      // Se o estado for AWAITING_AGE e is_recoverable for true, usa a pergunta otimizada comercialmente!
+      const transitionAlreadySent = history.some((h: any) => h.role === 'assistant' && h.content.includes("é bem comum o pedido ficar só no INSS mesmo"));
+      if (stateFsm === 'AWAITING_AGE' && user_data.is_recoverable === true && !transitionAlreadySent) {
+        if (familiar) {
+          const fem = ['filha', 'esposa', 'mãe', 'neta', 'irmã', 'avó', 'tia', 'sogra', 'sobrinha', 'nora', 'enteada', 'companheira'].includes(familiar.toLowerCase());
+          const art = fem ? 'a sua' : 'o seu';
+          const artLC = fem ? 'sua' : 'seu';
+          const prep = fem ? 'da' : 'do';
+          dryQuestion = `Entendi${nome}. Nesse caso é bem comum o pedido ficar só no INSS mesmo e acabar demorando ou sendo negado.\n\nAqui no escritório a gente analisa justamente se existe uma forma mais rápida ou segura de conseguir esse benefício para ${art} ${familiar}.\n\nPra eu te orientar melhor, qual a idade ${prep} ${artLC} ${familiar}?`;
+        } else {
+          dryQuestion = `Entendi${nome}. Nesse caso é bem comum o pedido ficar só no INSS mesmo e acabar demorando ou sendo negado.\n\nAqui no escritório a gente analisa justamente se existe uma forma mais rápida ou segura de conseguir esse benefício.\n\nPra eu te orientar melhor, qual a sua idade?`;
+        }
+      }
+
+      const reply = `Essa primeira consulta para entender o seu caso é totalmente gratuita. Primeiro deixa eu entender sua situação.\n\n${dryQuestion}`;
+      const newHistory = [...history, { role: 'user', content: text }, { role: 'assistant', content: reply }];
+
+      await this.supabase.rpc('save_session_data', {
+        p_phone: phone,
+        p_step: session?.step || 'welcome',
+        p_user_data_updates: {
+          history: newHistory,
+          state_fsm: stateFsm
+        }
+      });
+
+      console.log(`[INSTRUMENTAÇÃO] [${new Date().toISOString()}] [Lead: ${phone}] 💰 Resposta de honorários enviada: "${reply}"`);
+      return reply;
+    }
+
     // 1. Extração prévia de campos do texto antes de qualquer coisa (bloco consolidado)
     let extractedData: any = {};
     if (session?.user_data?.followup_sent) {
@@ -844,19 +1068,15 @@ JSON de retorno:`;
     if (!isGreeting) {
       const currentState = session?.user_data?.state_fsm || undefined;
 
-      if (this.detectarPerguntaEndereco(text)) {
-        console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 📍 Endereço detectado. Pulando extração de dados.`);
-      } else {
-        console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 3. Conteúdo enviado ao extractor: "${text}" (currentState: "${currentState}")`);
-        if (isAudio) {
-          console.log(`[INSTRUMENTAÇÃO ÁUDIO] [${timestamp}] [Lead: ${phone}] 4. Resultado enviado ao extractor: "${text}"`);
-        }
-        const rawExtracted = await this.runHybridExtraction(text, currentState);
-        extractedData = {
-          ...extractedData,
-          ...rawExtracted
-        };
+      console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 3. Conteúdo enviado ao extractor: "${text}" (currentState: "${currentState}")`);
+      if (isAudio) {
+        console.log(`[INSTRUMENTAÇÃO ÁUDIO] [${timestamp}] [Lead: ${phone}] 4. Resultado enviado ao extractor: "${text}"`);
       }
+      const rawExtracted = await this.runHybridExtraction(text, currentState);
+      extractedData = {
+        ...extractedData,
+        ...rawExtracted
+      };
 
       if (session?.user_data?.beneficiario_terceiro && session?.user_data?.idade !== undefined && session?.user_data?.idade !== null) {
         delete extractedData.idade;
@@ -973,8 +1193,7 @@ JSON de retorno:`;
         extractedData.doenca || 
         extractedData.deficiencia || 
         extractedData.tempo_contribuicao || 
-        extractedData.inss_tempo_carteira || 
-        text.length > 30
+        extractedData.inss_tempo_carteira
       );
 
       if (leadSentProblemWithoutName) {
@@ -1226,113 +1445,6 @@ JSON de retorno:`;
       };
       const esclarecimento = esclarecimentosFixos[stateFsm] || "É só pra gente entender melhor seu caso.";
       user_data.esclarecimento_pendente = esclarecimento;
-    }
-
-    // GUARDA DETERMINÍSTICO PARA ENDEREÇO
-    if (this.detectarPerguntaEndereco(text)) {
-      const nome = user_data.nome_usuario ? `, ${user_data.nome_usuario}` : "";
-      const familiar = user_data.beneficiario_terceiro;
-      
-      // Pega a pergunta correspondente ao estado atual
-      let dryQuestion = "";
-      if (stateFsm === 'AWAITING_NAME') {
-        dryQuestion = "Boa tarde! Tudo bem?\nMe chamo Lara, sou atendente do escritório da Dra. Mônica Lucioli. Com quem eu falo?";
-      } else if (resolved.fluxo_ativo === 'EXCECAO') {
-        dryQuestion = EXCECAO_QUESTIONS[Math.floor(Math.random() * EXCECAO_QUESTIONS.length)];
-      } else {
-        let questionsList = STATE_QUESTIONS[stateFsm];
-        if (stateFsm === 'BPC_AWAITING_HOUSEHOLD_INCOME') {
-          const moraSozinho = user_data.bpc_pessoas_casa && (
-            String(user_data.bpc_pessoas_casa).toLowerCase().includes('sozinh') ||
-            String(user_data.bpc_pessoas_casa).toLowerCase().includes('moro só') ||
-            String(user_data.bpc_pessoas_casa).toLowerCase().includes('moro so') ||
-            String(user_data.bpc_pessoas_casa).toLowerCase().includes('apenas eu') ||
-            String(user_data.bpc_pessoas_casa).toLowerCase().includes('somente eu') ||
-            String(user_data.bpc_pessoas_casa).toLowerCase() === 'eu' ||
-            String(user_data.bpc_pessoas_casa).toLowerCase().includes('1 pessoa') ||
-            String(user_data.bpc_pessoas_casa).toLowerCase().includes('uma pessoa')
-          );
-          if (moraSozinho) {
-            questionsList = ["Você recebe algum dinheiro? Bolsa família, pensão, aposentadoria ou alguma outra renda?"];
-          }
-        }
-        dryQuestion = questionsList ? questionsList[Math.floor(Math.random() * questionsList.length)] : "";
-      }
-
-      // Se houver familiar, adapta
-      if (familiar) {
-        const fem = ['filha', 'esposa', 'mãe', 'neta', 'irmã', 'avó', 'tia', 'sogra', 'sobrinha', 'nora', 'enteada', 'companheira'].includes(familiar.toLowerCase());
-        const art = fem ? 'A sua' : 'O seu';
-        const artLC = fem ? 'sua' : 'seu';
-        const prep = fem ? 'da' : 'do';
-        const pron = fem ? 'ela' : 'ele';
-        const pronPoss = fem ? 'dela' : 'dele';
-
-        if (stateFsm === 'AWAITING_LAWYER') {
-          dryQuestion = `${art} ${familiar} já tem advogado cuidando do caso?`;
-        } else if (stateFsm === 'LAWYER_CHECK_ACTION') {
-          dryQuestion = `Esse advogado já entrou com ação na Justiça em nome ${prep} ${artLC} ${familiar} ou só deu entrada no INSS?`;
-        } else if (stateFsm === 'LAWYER_CHECK_CONTRACT') {
-          dryQuestion = `${art} ${familiar} chegou a assinar contrato com esse advogado?`;
-        } else if (stateFsm === 'LAWYER_CHECK_PROCURACAO') {
-          dryQuestion = `${art} ${familiar} assinou procuração para esse advogado representar ${pron}?`;
-        } else if (stateFsm === 'AWAITING_AGE') {
-          dryQuestion = `Qual a idade ${prep} ${artLC} ${familiar}?`;
-        } else if (stateFsm === 'AWAITING_DISEASE') {
-          dryQuestion = `${art} ${familiar} tem alguma doença atualmente?`;
-        } else if (stateFsm === 'AWAITING_DISABILITY') {
-          dryQuestion = `${art} ${familiar} tem alguma deficiência?`;
-        } else if (stateFsm === 'AWAITING_TOTAL_CONTRIBUTION') {
-          dryQuestion = `${art} ${familiar} já trabalhou de carteira assinada ou contribuiu para o INSS?`;
-        } else if (stateFsm === 'AWAITING_CURRENT_CONTRIBUTION') {
-          dryQuestion = `Como está a rotina de trabalho ${prep} ${artLC} ${familiar} hoje em dia? ${pron.toUpperCase()} está conseguindo trabalhar?`;
-        } else if (stateFsm === 'AWAITING_LAST_CONTRIBUTION_TIME') {
-          dryQuestion = `Tem quanto tempo que ${art.toLowerCase()} ${familiar} se afastou ou parou de trabalhar?`;
-        } else if (stateFsm === 'INSS_AWAITING_EMPLOYMENT_TYPE') {
-          dryQuestion = `Como ${art.toLowerCase()} ${familiar} contribuía para o INSS? Era por carteira assinada, carnê ou MEI?`;
-        } else if (stateFsm === 'INSS_AWAITING_LAST_CONTRIBUTION') {
-          dryQuestion = `Tem quanto tempo que ${art.toLowerCase()} ${familiar} se afastou? Foi em que ano?`;
-        } else if (stateFsm === 'INSS_AWAITING_REPORTS') {
-          dryQuestion = `${art} ${familiar} possui exames, receitas ou laudos médicos recentes?`;
-        } else if (stateFsm === 'BPC_AWAITING_HOUSEHOLD') {
-          dryQuestion = `Quem mora com ${art.toLowerCase()} ${familiar} na casa ${pronPoss} hoje?`;
-        } else if (stateFsm === 'BPC_AWAITING_HOUSEHOLD_INCOME') {
-          dryQuestion = `Das pessoas que moram com ${art.toLowerCase()} ${familiar}, alguém trabalha ou recebe algum dinheiro?`;
-        } else if (stateFsm === 'BPC_AWAITING_HOME_STATUS') {
-          dryQuestion = `A casa ${prep} ${artLC} ${familiar} é própria, alugada ou cedida?`;
-        } else if (stateFsm === 'BPC_AWAITING_CADUNICO') {
-          dryQuestion = `${art} ${familiar} possui CadÚnico atualizado?`;
-        }
-      }
-
-      // Se o estado for AWAITING_AGE e is_recoverable for true, usa a pergunta otimizada comercialmente!
-      const transitionAlreadySent = history.some((h: any) => h.role === 'assistant' && h.content.includes("é bem comum o pedido ficar só no INSS mesmo"));
-      if (stateFsm === 'AWAITING_AGE' && user_data.is_recoverable === true && !transitionAlreadySent) {
-        if (familiar) {
-          const fem = ['filha', 'esposa', 'mãe', 'neta', 'irmã', 'avó', 'tia', 'sogra', 'sobrinha', 'nora', 'enteada', 'companheira'].includes(familiar.toLowerCase());
-          const art = fem ? 'a sua' : 'o seu';
-          const artLC = fem ? 'sua' : 'seu';
-          const prep = fem ? 'da' : 'do';
-          dryQuestion = `Entendi${nome}. Nesse caso é bem comum o pedido ficar só no INSS mesmo e acabar demorando ou sendo negado.\n\nAqui no escritório a gente analisa justamente se existe uma forma mais rápida ou segura de conseguir esse benefício para ${art} ${familiar}.\n\nPra eu te orientar melhor, qual a idade ${prep} ${artLC} ${familiar}?`;
-        } else {
-          dryQuestion = `Entendi${nome}. Nesse caso é bem comum o pedido ficar só no INSS mesmo e acabar demorando ou sendo negado.\n\nAqui no escritório a gente analisa justamente se existe uma forma mais rápida ou segura de conseguir esse benefício.\n\nPra eu te orientar melhor, qual a sua idade?`;
-        }
-      }
-
-      const reply = `Nosso escritório fica localizado na Avenida Cardoso Saraiva, 688, Matias Barbosa MG. Atendimento presencial em Matias e Juiz de Fora.\n\nAtendemos on-line em todo Brasil.\n\n${dryQuestion}`;
-      const newHistory = [...history, { role: 'user', content: text }, { role: 'assistant', content: reply }];
-
-      await this.supabase.rpc('save_session_data', {
-        p_phone: phone,
-        p_step: session?.step || null,
-        p_user_data_updates: {
-          history: newHistory,
-          state_fsm: stateFsm
-        }
-      });
-
-      console.log(`[INSTRUMENTAÇÃO] [${new Date().toISOString()}] [Lead: ${phone}] 9. Resposta de endereço enviada: "${reply}"`);
-      return reply;
     }
 
     // GUARDA DETERMINÍSTICO 0: Se o estado calculado for FINISHED, encerra deterministamente sem chamar a IA
@@ -2101,6 +2213,9 @@ Gere a resposta da Lara (retorne APENAS o texto reescrito da pergunta base, sem 
         userData.esta_contribuindo_atualmente = true;
       } else if (isInformal) {
         userData.esta_contribuindo_atualmente = false;
+      } else {
+        // Fallback: se trabalha atualmente e não foi especificado como informal, assume-se que está contribuindo atualmente (seguro para evitar a pergunta de rotina)
+        userData.esta_contribuindo_atualmente = true;
       }
     } else if (userData.trabalha_atualmente === false) {
       userData.esta_contribuindo_atualmente = false;

@@ -6,7 +6,7 @@ dotenv.config();
 const supabase = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
 
 async function run() {
-  const { data, error } = await supabase.from('sofia_sessions').select('*').order('updated_at', { ascending: false }).limit(5);
+  const { data, error } = await supabase.from('sofia_sessions').select('*').order('created_at', { ascending: false }).limit(5);
   if (error) {
     console.error('Error fetching sessions:', error);
     return;
