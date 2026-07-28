@@ -1438,8 +1438,8 @@ JSON de retorno:`;
     let history = user_data?.history || [];
 
     // Resolve a FSM determinística para garantir que estamos no estado correto
-    const resolved = this.resolveFSMState(user_data);
-    const stateFsm = resolved.state;
+    let resolved = this.resolveFSMState(user_data);
+    let stateFsm = resolved.state;
     if (resolved.fluxo_ativo) {
       user_data.fluxo_ativo = resolved.fluxo_ativo;
     }
@@ -1613,6 +1613,40 @@ JSON de retorno:`;
         history = newHistory;
         user_data.nome_usuario = nome;
         user_data.state_fsm = 'AWAITING_LAWYER';
+    }
+
+    // Checagem prioritária para estados binários com negação clara antes do soft-guard de off-topic/FSM
+    const estadosBinarios = ['AWAITING_DISABILITY', 'AWAITING_DISEASE', 'AWAITING_LAWYER', 'AWAITING_CURRENT_CONTRIBUTION'];
+    if (estadosBinarios.includes(stateFsm)) {
+      const isNegativeAnswer = /\b(nao|graca[s]? a deus nao|ainda bem que nao|felizmente nao)\b/i.test(cleanText) && cleanText.split(' ').length <= 6;
+      if (isNegativeAnswer) {
+        if (stateFsm === 'AWAITING_DISABILITY') {
+          user_data.tem_deficiencia = false;
+          user_data.deficiencia = 'Não';
+        }
+        if (stateFsm === 'AWAITING_DISEASE') {
+          user_data.tem_doenca_ou_limitacao = false;
+          user_data.doenca = 'Não';
+        }
+        if (stateFsm === 'AWAITING_LAWYER') user_data.has_lawyer = false;
+        if (stateFsm === 'AWAITING_CURRENT_CONTRIBUTION') user_data.esta_contribuindo_atualmente = false;
+        user_data.is_off_topic = false;
+
+        // Save to db
+        await this.supabase.rpc('save_session_data', {
+          p_phone: phone,
+          p_step: null,
+          p_user_data_updates: user_data
+        });
+
+        // Recalculate FSM state and score since we modified user_data
+        resolved = this.resolveFSMState(user_data);
+        stateFsm = resolved.state;
+        if (resolved.fluxo_ativo) {
+          user_data.fluxo_ativo = resolved.fluxo_ativo;
+        }
+        user_data.score_total = calcularScorePrevidenciario(user_data);
+      }
     }
 
     // GUARDA DETERMINÍSTICO 4: OFF-TOPIC — resposta humana e calorosa sem chamar a IA
