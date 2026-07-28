@@ -414,6 +414,13 @@ export class SofiaEngine {
       }
     }
 
+    if (currentState === 'RETIREMENT_AWAITING_OTHER_PERIODS') {
+      const profissaoPrivada = /\b(domestica|domestico|porteir|garcom|garconete|vendedor|balconista|faxineir|diarista|cozinheir|cabeleireir|pedreiro|motorista)\b/i.test(cleanText);
+      if (profissaoPrivada && (mergedData.retirement_other_periods === undefined || mergedData.retirement_other_periods === null)) {
+        mergedData.retirement_other_periods = 'Não';
+      }
+    }
+
     return mergedData;
   }
 
@@ -886,6 +893,16 @@ JSON de retorno:`;
         if (oldDeficiencia && oldDeficiencia.toLowerCase() !== 'não' && oldDeficiencia.toLowerCase() !== 'nao' && oldDeficiencia.trim() !== '') {
           delete extractedData.deficiencia;
           delete extractedData.tem_deficiencia;
+        }
+
+        // Trava para evitar que trabalha_atualmente já confirmado seja sobrescrito por respostas ambíguas
+        if (session.user_data?.trabalha_atualmente === true && extractedData.trabalha_atualmente === false) {
+          const cleanText = text.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+          const clearNegation = /\b(parei de trabalhar|nao trabalho mais|desempregad|fui demitid|perdi o emprego)\b/i.test(cleanText);
+          if (!clearNegation) {
+            delete extractedData.trabalha_atualmente;
+            delete extractedData.esta_contribuindo_atualmente;
+          }
         }
 
         if (currentState === 'AWAITING_CURRENT_CONTRIBUTION' && session.user_data?.reformulou_trabalho === true) {
