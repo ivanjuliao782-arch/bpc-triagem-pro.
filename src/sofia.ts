@@ -520,6 +520,7 @@ Campos a extrair:
 - bpc_parentesco: (string ou null) Grau de parentesco das pessoas que moram com ele.
 - bpc_renda_familiar: (boolean ou null) Se o cliente ou alguém na casa dele possui renda, salário, pensão, benefício, aposentadoria ou faz bicos/trabalho informal (true se tiver alguma renda/receber dinheiro/fizer bicos/trabalho, false se disser que não recebe nada, não tem renda ou usar expressões como "quem me dera", e null se não for mencionado). ATENÇÃO: Ajuda financeira informal, doações ou mesadas de parentes/filhos que NÃO moram na mesma casa NÃO devem ser consideradas renda (retorne false ou null).
 - bpc_quem_renda: (string ou null) Quem na casa tem renda e qual o valor. ATENÇÃO: Se a renda vier de ajuda de parentes/filhos que moram fora da casa, ignore e retorne null.
+- bpc_valor_renda_total: (number ou null) O valor numérico em reais da soma de TODA a renda mencionada (salário, aposentadoria, pensão, bolsa família, bico) de quem mora na casa. IMPORTANTE: NÃO inclua valores de despesas (aluguel, contas, gastos), idades, quantidade de pessoas, ou qualquer número que não seja especificamente renda recebida. Se não houver valor numérico claro de renda mencionado, retorne null.
 - bpc_casa_alugada_propria: (string ou null) Se a casa é alugada, própria, cedida, etc.
 - bpc_cad_unico: (boolean ou string ou null) Se tem Cadastro Único (CadÚnico).
 - inss_foi_autonomo: (boolean ou null) Se trabalhou como autônomo.
@@ -2523,16 +2524,25 @@ Gere a resposta da Lara (retorne APENAS o texto reescrito da pergunta base, sem 
       const hasIncomeInfo = (userData.bpc_renda_familiar !== undefined && userData.bpc_renda_familiar !== null) ||
                             (userData.bpc_quem_renda !== undefined && userData.bpc_quem_renda !== null && String(userData.bpc_quem_renda).trim() !== '');
       if (!hasIncomeInfo) return false;
-
       const familySize = this.parseNumber(userData.bpc_pessoas_casa) || 1;
-      const rawRenda = String(userData.bpc_quem_renda || userData.bpc_renda_familiar || "").toLowerCase();
-      const matches = rawRenda.match(/\d+/g);
+
+      // Usa o valor extraído diretamente pela IA, se disponível — evita somar números soltos do texto
       let totalRenda = 0;
-      if (matches) {
-        totalRenda = matches.reduce((acc, val) => acc + parseInt(val, 10), 0);
+      if (userData.bpc_valor_renda_total !== undefined && userData.bpc_valor_renda_total !== null) {
+        totalRenda = Number(userData.bpc_valor_renda_total) || 0;
+      } else {
+        // Fallback: mantém a lógica antiga só se o campo novo não vier preenchido
+        const rawRenda = String(userData.bpc_quem_renda || userData.bpc_renda_familiar || "").toLowerCase();
+        const matches = rawRenda.match(/\d+/g);
+        if (matches) {
+          totalRenda = matches.reduce((acc, val) => acc + parseInt(val, 10), 0);
+        }
       }
+
       const isHighIncome = totalRenda / familySize > 405.25;
-      const hasNoIncomeKeywords = rawRenda.includes("sem renda") || rawRenda.includes("ninguem") || rawRenda.includes("nenhum") || rawRenda.includes("nao tem") || rawRenda.includes("nao possui");
+      const rawRenda2 = String(userData.bpc_quem_renda || userData.bpc_renda_familiar || "").toLowerCase();
+      const hasNoIncomeKeywords = rawRenda2.includes("sem renda") || rawRenda2.includes("ninguem") || rawRenda2.includes("nenhum") || rawRenda2.includes("nao tem") || rawRenda2.includes("nao possui");
+
       return isHighIncome && !hasNoIncomeKeywords;
     })();
 
