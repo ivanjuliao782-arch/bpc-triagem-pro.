@@ -1,7 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import Groq from 'groq-sdk';
 import OpenAI from 'openai';
-import { calcularScorePrevidenciario } from './lib/score';
 import * as dotenv from 'dotenv';
 
 dotenv.config();
@@ -56,7 +55,7 @@ const STATE_QUESTIONS: Record<string, string[]> = {
     "Você trabalhava de carteira assinada ou por conta própria?"
   ],
   INSS_AWAITING_LAST_CONTRIBUTION: [
-    "Você já precisou se afastar do trabalho por causa dessa doença ou continua trabalhando mesmo com dor?"
+    "Tem quanto tempo que você se afastou? Foi em que ano?"
   ],
   INSS_AWAITING_REPORTS: [
     "Você possui exames, receitas ou laudos médicos recentes?"
@@ -288,24 +287,6 @@ export class SofiaEngine {
     }
 
     // 3. Yes/No mapping for FSM states
-    const estadosBinarios = ['AWAITING_DISABILITY', 'AWAITING_DISEASE', 'AWAITING_LAWYER', 'AWAITING_CURRENT_CONTRIBUTION'];
-    if (currentState && estadosBinarios.includes(currentState)) {
-      const isNegativeAnswer = /\b(nao|graca[s]? a deus nao|ainda bem que nao|felizmente nao)\b/i.test(cleanText) && cleanText.split(' ').length <= 6;
-      if (isNegativeAnswer) {
-        if (currentState === 'AWAITING_DISABILITY') {
-          mergedData.tem_deficiencia = false;
-          mergedData.deficiencia = 'Não';
-        }
-        if (currentState === 'AWAITING_DISEASE') {
-          mergedData.tem_doenca_ou_limitacao = false;
-          mergedData.doenca = 'Não';
-        }
-        if (currentState === 'AWAITING_LAWYER') mergedData.has_lawyer = false;
-        if (currentState === 'AWAITING_CURRENT_CONTRIBUTION') mergedData.esta_contribuindo_atualmente = false;
-        mergedData.is_off_topic = false; // sobrescreve, essa mensagem NÃO é off-topic
-      }
-    }
-
     const isNegative = cleanText === 'nao' || cleanText === 'n' || cleanText.startsWith('nao ') || cleanText.startsWith('n ') || cleanText.includes(' nao') || cleanText.includes('nao ') || cleanText.includes('tambem nao');
     const isPositive = cleanText === 'sim' || cleanText === 's' || cleanText.startsWith('sim ') || cleanText.startsWith('s ') || cleanText.includes(' sim') || cleanText.includes('sim ');
 
@@ -397,23 +378,6 @@ export class SofiaEngine {
       delete mergedData.nome_usuario;
     }
 
-    if (currentState === 'AWAITING_TOTAL_CONTRIBUTION' || currentState === 'AWAITING_CURRENT_CONTRIBUTION') {
-      const mencionaLoas = /\b(recebia loas|recebe loas|recebia bpc|recebe bpc|ja recebia o beneficio|recebia o beneficio)\b/i.test(cleanText);
-      if (mencionaLoas) {
-        mergedData.ja_contribuiu = false;
-        mergedData.esta_contribuindo_atualmente = false;
-        mergedData.tempo_parou_contribuir = 'nunca';
-        mergedData.inss_tempo_carteira = 'nenhum';
-      }
-    }
-
-    if (currentState === 'AWAITING_DISABILITY' || currentState === 'AWAITING_DISEASE') {
-      const mencionaDeficiencia = /\b(tem deficiencia|e deficiente|possui deficiencia|tem uma deficiencia)\b/i.test(cleanText);
-      if (mencionaDeficiencia && (mergedData.tem_deficiencia === undefined || mergedData.tem_deficiencia === null)) {
-        mergedData.tem_deficiencia = true;
-      }
-    }
-
     return mergedData;
   }
 
@@ -466,30 +430,7 @@ export class SofiaEngine {
 
   detectarPerguntaEndereco(text: string): boolean {
     const cleanText = text.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-    return /\b(onde fica|onde e|onde voce e|voce e de onde|voces sao de onde|de onde voce e|de onde voces sao|de onde e a doutora|onde a doutora fica|onde fica a doutora|cade voces|onde vocês|endereco|localizacao|onde ficam|onde voces ficam|onde voces atendem|onde voce atende|qual endereco|onde fica o escritorio|onde fica seu escritorio|onde fica o consultorio|em que cidade voces ficam|em que cidade voce fica|qual cidade voces ficam|onde e o escritorio)\b/i.test(cleanText);
-  }
-
-  detectarPerguntaValor(text: string): boolean {
-    const cleanText = text.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-    return /\b(quanto cobra|quanto e|quanto custa|valor|preco|custo|taxa|honorario|paga|pagar|pagamento|pagamentos|cobranca|cobrancas|cobra quanto|qual o valor|quais os valores|tem que pagar|pegar pelo|pegar para|pegar por|e de graca|e gratuito)\b/i.test(cleanText);
-  }
-
-  limparEcoPerguntas(text: string): string {
-    let cleanText = text;
-    // 1. Remove saudações personalizadas comuns da Lara com quebra de linha ou espaço
-    cleanText = cleanText.replace(/Prazer,?\s+\w+!?,?\s*(?:Sinto muito que esteja passando por isso\.)?/gi, '');
-    cleanText = cleanText.replace(/Me chamo Lara,?\s+atendente do escritório da Dra\.\s+Mônica Lucioli\./gi, '');
-    cleanText = cleanText.replace(/Olá!?,?\s*(?:seja bem-vindo\(a\)|Tudo bem\?)?/gi, '');
-    
-    // 2. Remove frases exatas de perguntas cadastradas na FSM
-    for (const questions of Object.values(STATE_QUESTIONS)) {
-      for (const question of questions) {
-        const escaped = question.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
-        const regex = new RegExp(escaped, 'gi');
-        cleanText = cleanText.replace(regex, '');
-      }
-    }
-    return cleanText.replace(/^\s+|\s+$/g, '').trim();
+    return /\b(onde fica|onde e|endereco|localizacao|onde ficam|onde voces ficam|qual endereco)\b/i.test(cleanText);
   }
 
   async runExtraction(text: string, currentState?: string): Promise<any> {
@@ -518,13 +459,13 @@ Campos a extrair:
 - inss_tempo_carteira: (string ou null) Tempo trabalhado de carteira assinada ou tempo de contribuição mencionado (ex: "15 anos").
 - bpc_pessoas_casa: (string ou null) Quantidade ou quem são as pessoas que moram com ele.
 - bpc_parentesco: (string ou null) Grau de parentesco das pessoas que moram com ele.
-- bpc_renda_familiar: (boolean ou null) Se o cliente ou alguém na casa dele possui renda, salário, pensão, benefício, aposentadoria ou faz bicos/trabalho informal (true se tiver alguma renda/receber dinheiro/fizer bicos/trabalho, false se disser que não recebe nada, não tem renda ou usar expressões como "quem me dera", e null se não for mencionado). ATENÇÃO: Ajuda financeira informal, doações ou mesadas de parentes/filhos que NÃO moram na mesma casa NÃO devem ser consideradas renda (retorne false ou null).
-- bpc_quem_renda: (string ou null) Quem na casa tem renda e qual o valor. ATENÇÃO: Se a renda vier de ajuda de parentes/filhos que moram fora da casa, ignore e retorne null.
+- bpc_renda_familiar: (boolean ou null) Se o cliente ou alguém na casa dele possui renda, salário, pensão, benefício, aposentadoria ou faz bicos/trabalho informal (true se tiver alguma renda/receber dinheiro/fizer bicos/trabalho, false se disser que não recebe nada, não tem renda ou usar expressões como "quem me dera", e null se não for mencionado).
+- bpc_quem_renda: (string ou null) Quem na casa tem renda e qual o valor.
 - bpc_casa_alugada_propria: (string ou null) Se a casa é alugada, própria, cedida, etc.
 - bpc_cad_unico: (boolean ou string ou null) Se tem Cadastro Único (CadÚnico).
 - inss_foi_autonomo: (boolean ou null) Se trabalhou como autônomo.
 - inss_como_contribuiu: (string ou null) Como contribuiu (carnê, carteira assinada, etc.).
-- inss_ultima_contribuicao: (string ou null) Informação sobre se e quando contribuiu ou pagou carnê do INSS nos últimos 5 anos (ex: "paguei ano passado", "há 3 anos atrás", "não paguei nos últimos 5 anos", ou se disser que continua trabalhando e não se afastou, retorne "Trabalhando atualmente").
+- inss_ultima_contribuicao: (string ou null) Informação sobre se e quando contribuiu ou pagou carnê do INSS nos últimos 5 anos (ex: "paguei ano passado", "há 3 anos atrás", "não paguei nos últimos 5 anos").
 - inss_laudos_medicos: (boolean ou null) Se possui exames ou laudos médicos.
 - inss_data_laudo: (string ou null) Data do laudo médico.
 - has_recent_report: (boolean ou null) Se o laudo médico é recente (últimos meses).
@@ -626,20 +567,10 @@ JSON de retorno:`;
 
     // 2. Idade (AWAITING_AGE)
     if (currentState === 'AWAITING_AGE') {
-      const words = clean.split(/\s+/);
-      if (words.length <= 4) {
-        const match = clean.match(/\b\d{1,2}\b/);
-        if (match) {
-          data.idade = parseInt(match[0], 10);
-        }
+      const match = clean.match(/\b\d{1,2}\b/);
+      if (match) {
+        data.idade = parseInt(match[0], 10);
       } else {
-        const matchExplicit = clean.match(/\b(\d{1,2})\s*(?:anos|de idade)\b/i) || clean.match(/\b(?:idade|tenho)\s*(\d{1,2})\b/i);
-        if (matchExplicit) {
-          data.idade = parseInt(matchExplicit[1], 10);
-        }
-      }
-
-      if (!data.idade) {
         if (clean.includes("sessenta e cinco")) data.idade = 65;
         else if (clean.includes("sessenta e seis")) data.idade = 66;
         else if (clean.includes("sessenta e sete")) data.idade = 67;
@@ -763,11 +694,10 @@ JSON de retorno:`;
       if (currentState === 'BPC_AWAITING_HOUSEHOLD' && codeResult.bpc_pessoas_casa) needsFallback = false;
     }
 
-    // Se a mensagem for longa (mais de 12 palavras) ou contiver múltiplos números, força fallback para IA para capturar dados voluntários extras
+    // Se a mensagem for longa (mais de 20 palavras), força fallback para IA para capturar dados voluntários extras
     const wordCount = text.trim().split(/\s+/).length;
-    const numberMatches = text.match(/\d+/g) || [];
-    if (wordCount > 12 || numberMatches.length > 1) {
-      needsFallback = true; // força IA mesmo se o regex já resolveu rápido, quando a msg é longa OU tem múltiplos números
+    if (wordCount > 20) {
+      needsFallback = true;
     }
 
     // Se a mensagem contém auto-correção de beneficiário, força fallback para IA atualizar o campo beneficiario_terceiro corretamente
@@ -812,15 +742,8 @@ JSON de retorno:`;
 
     if (!text) return "Desculpe, não consegui entender o seu áudio. Pode repetir ou digitar?";
 
-    // Limpa qualquer citação/eco das próprias perguntas da Lara antes de processar
-    text = this.limparEcoPerguntas(text);
-    if (!text || text.trim() === '') {
-      console.log(`[INSTRUMENTAÇÃO] [Lead: ${phone}] ⚠️ Mensagem ignorada: continha apenas ecos de perguntas.`);
-      return null;
-    }
-
     const timestamp = new Date().toISOString();
-    console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 1. Mensagem recebida sanitizada: "${text}"`);
+    console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 1. Mensagem recebida: "${text}"`);
 
     const isGreeting = this.isSimpleGreeting(text);
     let { data: session } = await this.supabase.from('sofia_sessions').select('*').eq('phone', phone).single();
@@ -832,407 +755,12 @@ JSON de retorno:`;
       return null;
     }
 
-    let user_data = session?.user_data || {};
-    let stateFsm = user_data.state_fsm || 'AWAITING_NAME';
-    let history = user_data.history || [];
-    let resolved = this.resolveFSMState(user_data);
-
     // 1. Extração prévia de campos do texto antes de qualquer coisa (bloco consolidado)
     let extractedData: any = {};
-    if (session) {
-      if (session.user_data?.followup_sent) {
-        extractedData.followup_sent = false;
-        extractedData.followup_sent_at = null;
-      }
-
-      if (this.detectarAutoBeneficiario(text)) {
-        console.log(`[EXTRAÇÃO] Correção para auto-beneficiário detectada no texto: "${text}". Resetando beneficiario_terceiro.`);
-        extractedData.beneficiario_terceiro = null;
-        extractedData.beneficiario_ja_confirmado = true; // Trava para sempre
-      }
-
-      // Detecta beneficiário terceiro em qualquer mensagem, antes de tudo (código puro)
-      let beneficiarioTerceiro = session.user_data?.beneficiario_terceiro || null;
-      if (extractedData.beneficiario_terceiro === null) {
-        beneficiarioTerceiro = null;
-      }
-
-      if (!isGreeting) {
-        const currentState = session.user_data?.state_fsm || undefined;
-
-        console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 3. Conteúdo enviado ao extractor: "${text}" (currentState: "${currentState}")`);
-        if (isAudio) {
-          console.log(`[INSTRUMENTAÇÃO ÁUDIO] [${timestamp}] [Lead: ${phone}] 4. Resultado enviado ao extractor: "${text}"`);
-        }
-        const rawExtracted = await this.runHybridExtraction(text, currentState);
-        extractedData = {
-          ...extractedData,
-          ...rawExtracted
-        };
-
-        if (session.user_data?.beneficiario_terceiro && session.user_data?.idade !== undefined && session.user_data?.idade !== null) {
-          delete extractedData.idade;
-        }
-
-        // Trava para evitar que doenças já registradas sejam sobrescritas por negações em turnos posteriores
-        const oldDoenca = session.user_data?.doenca;
-        if (oldDoenca && oldDoenca.toLowerCase() !== 'não' && oldDoenca.toLowerCase() !== 'nao' && oldDoenca.trim() !== '') {
-          delete extractedData.doenca;
-          delete extractedData.tem_doenca_ou_limitacao;
-        }
-
-        const oldDeficiencia = session.user_data?.deficiencia;
-        if (oldDeficiencia && oldDeficiencia.toLowerCase() !== 'não' && oldDeficiencia.toLowerCase() !== 'nao' && oldDeficiencia.trim() !== '') {
-          delete extractedData.deficiencia;
-          delete extractedData.tem_deficiencia;
-        }
-
-        if (currentState === 'AWAITING_CURRENT_CONTRIBUTION' && session.user_data?.reformulou_trabalho === true) {
-          if (extractedData.esta_contribuindo_atualmente === undefined) {
-            extractedData.esta_contribuindo_atualmente = false;
-          }
-        }
-        console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 4. Dados extraídos (híbrido): ${JSON.stringify(extractedData)}`);
-        if (isAudio) {
-          console.log(`[INSTRUMENTAÇÃO ÁUDIO] [${timestamp}] [Lead: ${phone}] 5. Campos extraídos do áudio: ${JSON.stringify(extractedData)}`);
-        }
-        console.log("📝 Dados extraídos previamente:", JSON.stringify(extractedData));
-      }
-
-      const oldNome = user_data.nome_usuario;
-      const newNome = extractedData.nome_usuario;
-
-      let updatedUserData = {
-        ...user_data,
-        ...extractedData
-      };
-
-      // Se um novo nome diferente for informado, resetamos o histórico e reiniciamos a FSM para o novo cliente
-      if (newNome && oldNome && newNome.trim().toLowerCase() !== oldNome.trim().toLowerCase()) {
-        console.log(`🔄 Novo nome detectado (${newNome} diferente de ${oldNome}). Reiniciando FSM da sessão...`);
-        updatedUserData = {
-          ...extractedData,
-          history: [
-            { role: 'assistant', content: `Olá! Tudo bem?\nMe chamo Lara, sou atendente do escritório da Dra. Mônica Lucioli. Com quem eu falo?` },
-            { role: 'user', content: text }
-          ],
-          state_fsm: 'AWAITING_NAME',
-          nome_usuario: newNome
-        };
-      }
-
-      // Resolve a FSM deterministicamente pós-extração
-      resolved = this.resolveFSMState(updatedUserData);
-      stateFsm = resolved.state;
-      if (resolved.fluxo_ativo) {
-        updatedUserData.fluxo_ativo = resolved.fluxo_ativo;
-      }
-      updatedUserData.score_total = calcularScorePrevidenciario(updatedUserData);
-      user_data = updatedUserData;
-      session.user_data = updatedUserData;
-      console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 5. Estado calculado pela FSM (pré-AI): state="${resolved.state}", fluxo="${resolved.fluxo_ativo || 'N/A'}"`);
-
-      // Se houver novos dados extraídos ou o histórico foi reiniciado, salva no banco de dados imediatamente
-      if (Object.keys(extractedData).length > 0 || (newNome && oldNome && newNome.trim().toLowerCase() !== oldNome.trim().toLowerCase())) {
-        console.log("💾 Salvando dados extraídos previamente no banco de dados...");
-        const updates = updatedUserData;
-        console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 6. Payload enviado ao Supabase (pré-AI): step=null, updates=${JSON.stringify(updates)}`);
-
-        const { data: newMergedData, error } = await this.supabase.rpc('save_session_data', {
-          p_phone: phone,
-          p_step: null,
-          p_user_data_updates: updates
-        });
-        
-        if (error) {
-          console.error(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 7. Falha na persistência (pré-AI): ${JSON.stringify(error)}`);
-        } else {
-          console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 7. Confirmação de persistência bem-sucedida (pré-AI). Data retornado: ${JSON.stringify(newMergedData)}`);
-          session.user_data = newMergedData || updatedUserData;
-          user_data = session.user_data;
-        }
-
-        const { data: reReadSession } = await this.supabase.from('sofia_sessions').select('*').eq('phone', phone).single();
-        console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 8. Estado relido após save (pré-AI): FSM="${reReadSession?.user_data?.state_fsm}", step="${reReadSession?.step}", user_data=${JSON.stringify(reReadSession?.user_data)}"`);
-      }
+    if (session?.user_data?.followup_sent) {
+      extractedData.followup_sent = false;
+      extractedData.followup_sent_at = null;
     }
-
-    // GUARDA DETERMINÍSTICO PARA ENDEREÇO
-    if (this.detectarPerguntaEndereco(text)) {
-      const nome = user_data.nome_usuario ? `, ${user_data.nome_usuario}` : "";
-      const familiar = user_data.beneficiario_terceiro;
-      
-      // Pega a pergunta correspondente ao estado atual
-      let dryQuestion = "";
-      if (stateFsm === 'AWAITING_NAME') {
-        dryQuestion = "Boa tarde! Tudo bem?\nMe chamo Lara, sou atendente do escritório da Dra. Mônica Lucioli. Com quem eu falo?";
-      } else if (resolved.fluxo_ativo === 'EXCECAO') {
-        dryQuestion = EXCECAO_QUESTIONS[Math.floor(Math.random() * EXCECAO_QUESTIONS.length)];
-      } else {
-        let questionsList = STATE_QUESTIONS[stateFsm];
-        if (stateFsm === 'BPC_AWAITING_HOUSEHOLD_INCOME') {
-          const moraSozinho = user_data.bpc_pessoas_casa && (
-            String(user_data.bpc_pessoas_casa).toLowerCase().includes('sozinh') ||
-            String(user_data.bpc_pessoas_casa).toLowerCase().includes('moro só') ||
-            String(user_data.bpc_pessoas_casa).toLowerCase().includes('moro so') ||
-            String(user_data.bpc_pessoas_casa).toLowerCase().includes('moro solo') ||
-            String(user_data.bpc_pessoas_casa).toLowerCase().includes('vivo só') ||
-            String(user_data.bpc_pessoas_casa).toLowerCase().includes('vivo so') ||
-            String(user_data.bpc_pessoas_casa).toLowerCase().includes('apenas eu') ||
-            String(user_data.bpc_pessoas_casa).toLowerCase().includes('somente eu') ||
-            String(user_data.bpc_pessoas_casa).toLowerCase().includes('só eu') ||
-            String(user_data.bpc_pessoas_casa).toLowerCase().includes('so eu') ||
-            String(user_data.bpc_pessoas_casa).toLowerCase().includes('eu mesmo') ||
-            String(user_data.bpc_pessoas_casa).toLowerCase().includes('eu mesma') ||
-            String(user_data.bpc_pessoas_casa).toLowerCase().includes('eu sozinho') ||
-            String(user_data.bpc_pessoas_casa).toLowerCase().includes('eu sozinha') ||
-            String(user_data.bpc_pessoas_casa).toLowerCase().includes('ninguem mais') ||
-            String(user_data.bpc_pessoas_casa).toLowerCase().includes('ninguém mais') ||
-            String(user_data.bpc_pessoas_casa).toLowerCase().includes('moro sem ninguem') ||
-            String(user_data.bpc_pessoas_casa).toLowerCase().includes('não moro com ninguém') ||
-            String(user_data.bpc_pessoas_casa).toLowerCase().includes('nao moro com ninguem') ||
-            String(user_data.bpc_pessoas_casa).toLowerCase() === 'eu' ||
-            String(user_data.bpc_pessoas_casa).toLowerCase() === 'so' ||
-            String(user_data.bpc_pessoas_casa).toLowerCase() === 'só' ||
-            String(user_data.bpc_pessoas_casa).toLowerCase().includes('1 pessoa') ||
-            String(user_data.bpc_pessoas_casa).toLowerCase().includes('uma pessoa') ||
-            String(user_data.bpc_pessoas_casa).toLowerCase().includes('moro individual') ||
-            String(user_data.bpc_pessoas_casa).toLowerCase().includes('resido só') ||
-            String(user_data.bpc_pessoas_casa).toLowerCase().includes('resido so')
-          );
-          if (moraSozinho) {
-            questionsList = ["Você recebe algum dinheiro? Bolsa família, pensão, aposentadoria ou alguma outra renda?"];
-          }
-        }
-        dryQuestion = questionsList ? questionsList[Math.floor(Math.random() * questionsList.length)] : "";
-      }
-
-      // Se houver familiar, adapta
-      if (familiar) {
-        const fem = ['filha', 'esposa', 'mãe', 'neta', 'irmã', 'avó', 'tia', 'sogra', 'sobrinha', 'nora', 'enteada', 'companheira'].includes(familiar.toLowerCase());
-        const art = fem ? 'A sua' : 'O seu';
-        const artLC = fem ? 'sua' : 'seu';
-        const prep = fem ? 'da' : 'do';
-        const pron = fem ? 'ela' : 'ele';
-        const pronPoss = fem ? 'dela' : 'dele';
-
-        if (stateFsm === 'AWAITING_LAWYER') {
-          dryQuestion = `${art} ${familiar} já tem advogado cuidando do caso?`;
-        } else if (stateFsm === 'LAWYER_CHECK_ACTION') {
-          dryQuestion = `Esse advogado já entrou com ação na Justiça em nome ${prep} ${artLC} ${familiar} ou só deu entrada no INSS?`;
-        } else if (stateFsm === 'LAWYER_CHECK_CONTRACT') {
-          dryQuestion = `${art} ${familiar} chegou a assinar contrato com esse advogado?`;
-        } else if (stateFsm === 'LAWYER_CHECK_PROCURACAO') {
-          dryQuestion = `${art} ${familiar} assinou procuração para esse advogado representar ${pron}?`;
-        } else if (stateFsm === 'AWAITING_AGE') {
-          dryQuestion = `Qual a idade ${prep} ${artLC} ${familiar}?`;
-        } else if (stateFsm === 'AWAITING_DISEASE') {
-          dryQuestion = `${art} ${familiar} tem alguma doença atualmente?`;
-        } else if (stateFsm === 'AWAITING_DISABILITY') {
-          dryQuestion = `${art} ${familiar} tem alguma deficiência?`;
-        } else if (stateFsm === 'AWAITING_TOTAL_CONTRIBUTION') {
-          dryQuestion = `${art} ${familiar} já trabalhou de carteira assinada ou contribuiu para o INSS?`;
-        } else if (stateFsm === 'AWAITING_CURRENT_CONTRIBUTION') {
-          dryQuestion = `Como está a rotina de trabalho ${prep} ${artLC} ${familiar} hoje em dia? ${pron.toUpperCase()} está conseguindo trabalhar?`;
-        } else if (stateFsm === 'AWAITING_LAST_CONTRIBUTION_TIME') {
-          dryQuestion = `Tem quanto tempo que ${art.toLowerCase()} ${familiar} se afastou ou parou de trabalhar?`;
-        } else if (stateFsm === 'INSS_AWAITING_EMPLOYMENT_TYPE') {
-          dryQuestion = `Como ${art.toLowerCase()} ${familiar} contribuía para o INSS? Era por carteira assinada, carnê ou MEI?`;
-        } else if (stateFsm === 'INSS_AWAITING_LAST_CONTRIBUTION') {
-          dryQuestion = `Tem quanto tempo que ${art.toLowerCase()} ${familiar} se afastou? Foi em que ano?`;
-        } else if (stateFsm === 'INSS_AWAITING_REPORTS') {
-          dryQuestion = `${art} ${familiar} possui exames, receitas ou laudos médicos recentes?`;
-        } else if (stateFsm === 'BPC_AWAITING_HOUSEHOLD') {
-          dryQuestion = `Quem mora com ${art.toLowerCase()} ${familiar} na casa ${pronPoss} hoje?`;
-        } else if (stateFsm === 'BPC_AWAITING_HOUSEHOLD_INCOME') {
-          dryQuestion = `Das pessoas que moram com ${art.toLowerCase()} ${familiar}, alguém trabalha ou recebe algum dinheiro?`;
-        } else if (stateFsm === 'BPC_AWAITING_HOME_STATUS') {
-          dryQuestion = `A casa ${prep} ${artLC} ${familiar} é própria, alugada ou cedida?`;
-        } else if (stateFsm === 'BPC_AWAITING_CADUNICO') {
-          dryQuestion = `${art} ${familiar} possui CadÚnico atualizado?`;
-        }
-      }
-
-      // Se o estado for AWAITING_AGE e is_recoverable for true, usa a pergunta otimizada comercialmente!
-      const transitionAlreadySent = history.some((h: any) => h.role === 'assistant' && h.content.includes("é bem comum o pedido ficar só no INSS mesmo"));
-      if (stateFsm === 'AWAITING_AGE' && user_data.is_recoverable === true && !transitionAlreadySent) {
-        if (familiar) {
-          const fem = ['filha', 'esposa', 'mãe', 'neta', 'irmã', 'avó', 'tia', 'sogra', 'sobrinha', 'nora', 'enteada', 'companheira'].includes(familiar.toLowerCase());
-          const art = fem ? 'a sua' : 'o seu';
-          const artLC = fem ? 'sua' : 'seu';
-          const prep = fem ? 'da' : 'do';
-          dryQuestion = `Entendi${nome}. Nesse caso é bem comum o pedido ficar só no INSS mesmo e acabar demorando ou sendo negado.\n\nAqui no escritório a gente analisa justamente se existe uma forma mais rápida ou segura de conseguir esse benefício para ${art} ${familiar}.\n\nPra eu te orientar melhor, qual a idade ${prep} ${artLC} ${familiar}?`;
-        } else {
-          dryQuestion = `Entendi${nome}. Nesse caso é bem comum o pedido ficar só no INSS mesmo e acabar demorando ou sendo negado.\n\nAqui no escritório a gente analisa justamente se existe uma forma mais rápida ou segura de conseguir esse benefício.\n\nPra eu te orientar melhor, qual a sua idade?`;
-        }
-      }
-
-      const cleanText = text.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-      const calledWrongName = /\b(doutora|dra|senhora|senhor|moca)\b/i.test(cleanText);
-      const ehPrimeiraMensagem = !history || history.length === 0;
-      let prefixoCorrecao = "";
-      if (calledWrongName && !ehPrimeiraMensagem) {
-        prefixoCorrecao = "Pode me chamar de Lara. ";
-      }
-
-      const reply = `${prefixoCorrecao}Nosso escritório fica localizado na Avenida Cardoso Saraiva, 688, Matias Barbosa MG. Atendimento presencial em Matias e Juiz de Fora.\n\nAtendemos on-line em todo Brasil.\n\n${dryQuestion}`;
-      const newHistory = [...history, { role: 'user', content: text }, { role: 'assistant', content: reply }];
-
-      const updates = {
-        ...user_data,
-        history: newHistory,
-        state_fsm: stateFsm
-      };
-
-      await this.supabase.rpc('save_session_data', {
-        p_phone: phone,
-        p_step: session?.step || 'welcome',
-        p_user_data_updates: updates
-      });
-
-      console.log(`[INSTRUMENTAÇÃO] [${new Date().toISOString()}] [Lead: ${phone}] 9. Resposta de endereço enviada: "${reply}"`);
-      return reply;
-    }
-
-    // GUARDA DETERMINÍSTICO PARA VALOR / HONORÁRIOS
-    if (this.detectarPerguntaValor(text)) {
-      const nome = user_data.nome_usuario ? `, ${user_data.nome_usuario}` : "";
-      const familiar = user_data.beneficiario_terceiro;
-      
-      // Pega a pergunta correspondente ao estado atual
-      let dryQuestion = "";
-      if (stateFsm === 'AWAITING_NAME') {
-        dryQuestion = "Boa tarde! Tudo bem?\nMe chamo Lara, sou atendente do escritório da Dra. Mônica Lucioli. Com quem eu falo?";
-      } else if (resolved.fluxo_ativo === 'EXCECAO') {
-        dryQuestion = EXCECAO_QUESTIONS[Math.floor(Math.random() * EXCECAO_QUESTIONS.length)];
-      } else {
-        let questionsList = STATE_QUESTIONS[stateFsm];
-        if (stateFsm === 'BPC_AWAITING_HOUSEHOLD_INCOME') {
-          const moraSozinho = user_data.bpc_pessoas_casa && (
-            String(user_data.bpc_pessoas_casa).toLowerCase().includes('sozinh') ||
-            String(user_data.bpc_pessoas_casa).toLowerCase().includes('moro só') ||
-            String(user_data.bpc_pessoas_casa).toLowerCase().includes('moro so') ||
-            String(user_data.bpc_pessoas_casa).toLowerCase().includes('moro solo') ||
-            String(user_data.bpc_pessoas_casa).toLowerCase().includes('vivo só') ||
-            String(user_data.bpc_pessoas_casa).toLowerCase().includes('vivo so') ||
-            String(user_data.bpc_pessoas_casa).toLowerCase().includes('apenas eu') ||
-            String(user_data.bpc_pessoas_casa).toLowerCase().includes('somente eu') ||
-            String(user_data.bpc_pessoas_casa).toLowerCase().includes('só eu') ||
-            String(user_data.bpc_pessoas_casa).toLowerCase().includes('so eu') ||
-            String(user_data.bpc_pessoas_casa).toLowerCase().includes('eu mesmo') ||
-            String(user_data.bpc_pessoas_casa).toLowerCase().includes('eu mesma') ||
-            String(user_data.bpc_pessoas_casa).toLowerCase().includes('eu sozinho') ||
-            String(user_data.bpc_pessoas_casa).toLowerCase().includes('eu sozinha') ||
-            String(user_data.bpc_pessoas_casa).toLowerCase().includes('ninguem mais') ||
-            String(user_data.bpc_pessoas_casa).toLowerCase().includes('ninguém mais') ||
-            String(user_data.bpc_pessoas_casa).toLowerCase().includes('moro sem ninguem') ||
-            String(user_data.bpc_pessoas_casa).toLowerCase().includes('não moro com ninguém') ||
-            String(user_data.bpc_pessoas_casa).toLowerCase().includes('nao moro com ninguem') ||
-            String(user_data.bpc_pessoas_casa).toLowerCase() === 'eu' ||
-            String(user_data.bpc_pessoas_casa).toLowerCase() === 'so' ||
-            String(user_data.bpc_pessoas_casa).toLowerCase() === 'só' ||
-            String(user_data.bpc_pessoas_casa).toLowerCase().includes('1 pessoa') ||
-            String(user_data.bpc_pessoas_casa).toLowerCase().includes('uma pessoa') ||
-            String(user_data.bpc_pessoas_casa).toLowerCase().includes('moro individual') ||
-            String(user_data.bpc_pessoas_casa).toLowerCase().includes('resido só') ||
-            String(user_data.bpc_pessoas_casa).toLowerCase().includes('resido so')
-          );
-          if (moraSozinho) {
-            questionsList = ["Você recebe algum dinheiro? Bolsa família, pensão, aposentadoria ou alguma outra renda?"];
-          }
-        }
-        dryQuestion = questionsList ? questionsList[Math.floor(Math.random() * questionsList.length)] : "";
-      }
-
-      // Se houver familiar, adapta
-      if (familiar) {
-        const fem = ['filha', 'esposa', 'mãe', 'neta', 'irmã', 'avó', 'tia', 'sogra', 'sobrinha', 'nora', 'enteada', 'companheira'].includes(familiar.toLowerCase());
-        const art = fem ? 'A sua' : 'O seu';
-        const artLC = fem ? 'sua' : 'seu';
-        const prep = fem ? 'da' : 'do';
-        const pron = fem ? 'ela' : 'ele';
-        const pronPoss = fem ? 'dela' : 'dele';
-
-        if (stateFsm === 'AWAITING_LAWYER') {
-          dryQuestion = `${art} ${familiar} já tem advogado cuidando do caso?`;
-        } else if (stateFsm === 'LAWYER_CHECK_ACTION') {
-          dryQuestion = `Esse advogado já entrou com ação na Justiça em nome ${prep} ${artLC} ${familiar} ou só deu entrada no INSS?`;
-        } else if (stateFsm === 'LAWYER_CHECK_CONTRACT') {
-          dryQuestion = `${art} ${familiar} chegou a assinar contrato com esse advogado?`;
-        } else if (stateFsm === 'LAWYER_CHECK_PROCURACAO') {
-          dryQuestion = `${art} ${familiar} assinou procuração para esse advogado representar ${pron}?`;
-        } else if (stateFsm === 'AWAITING_AGE') {
-          dryQuestion = `Qual a idade ${prep} ${artLC} ${familiar}?`;
-        } else if (stateFsm === 'AWAITING_DISEASE') {
-          dryQuestion = `${art} ${familiar} tem alguma doença atualmente?`;
-        } else if (stateFsm === 'AWAITING_DISABILITY') {
-          dryQuestion = `${art} ${familiar} tem alguma deficiência?`;
-        } else if (stateFsm === 'AWAITING_TOTAL_CONTRIBUTION') {
-          dryQuestion = `${art} ${familiar} já trabalhou de carteira assinada ou contribuiu para o INSS?`;
-        } else if (stateFsm === 'AWAITING_CURRENT_CONTRIBUTION') {
-          dryQuestion = `Como está a rotina de trabalho ${prep} ${artLC} ${familiar} hoje em dia? ${pron.toUpperCase()} está conseguindo trabalhar?`;
-        } else if (stateFsm === 'AWAITING_LAST_CONTRIBUTION_TIME') {
-          dryQuestion = `Tem quanto tempo que ${art.toLowerCase()} ${familiar} se afastou ou parou de trabalhar?`;
-        } else if (stateFsm === 'INSS_AWAITING_EMPLOYMENT_TYPE') {
-          dryQuestion = `Como ${art.toLowerCase()} ${familiar} contribuía para o INSS? Era por carteira assinada, carnê ou MEI?`;
-        } else if (stateFsm === 'INSS_AWAITING_LAST_CONTRIBUTION') {
-          dryQuestion = `Tem quanto tempo que ${art.toLowerCase()} ${familiar} se afastou? Foi em que ano?`;
-        } else if (stateFsm === 'INSS_AWAITING_REPORTS') {
-          dryQuestion = `${art} ${familiar} possui exames, receitas ou laudos médicos recentes?`;
-        } else if (stateFsm === 'BPC_AWAITING_HOUSEHOLD') {
-          dryQuestion = `Quem mora com ${art.toLowerCase()} ${familiar} na casa ${pronPoss} hoje?`;
-        } else if (stateFsm === 'BPC_AWAITING_HOUSEHOLD_INCOME') {
-          dryQuestion = `Das pessoas que moram com ${art.toLowerCase()} ${familiar}, alguém trabalha ou recebe algum dinheiro?`;
-        } else if (stateFsm === 'BPC_AWAITING_HOME_STATUS') {
-          dryQuestion = `A casa ${prep} ${artLC} ${familiar} é própria, alugada ou cedida?`;
-        } else if (stateFsm === 'BPC_AWAITING_CADUNICO') {
-          dryQuestion = `${art} ${familiar} possui CadÚnico atualizado?`;
-        }
-      }
-
-      // Se o estado for AWAITING_AGE e is_recoverable for true, usa a pergunta otimizada comercialmente!
-      const transitionAlreadySent = history.some((h: any) => h.role === 'assistant' && h.content.includes("é bem comum o pedido ficar só no INSS mesmo"));
-      if (stateFsm === 'AWAITING_AGE' && user_data.is_recoverable === true && !transitionAlreadySent) {
-        if (familiar) {
-          const fem = ['filha', 'esposa', 'mãe', 'neta', 'irmã', 'avó', 'tia', 'sogra', 'sobrinha', 'nora', 'enteada', 'companheira'].includes(familiar.toLowerCase());
-          const art = fem ? 'a sua' : 'o seu';
-          const artLC = fem ? 'sua' : 'seu';
-          const prep = fem ? 'da' : 'do';
-          dryQuestion = `Entendi${nome}. Nesse caso é bem comum o pedido ficar só no INSS mesmo e acabar demorando ou sendo negado.\n\nAqui no escritório a gente analisa justamente se existe uma forma mais rápida ou segura de conseguir esse benefício para ${art} ${familiar}.\n\nPra eu te orientar melhor, qual a idade ${prep} ${artLC} ${familiar}?`;
-        } else {
-          dryQuestion = `Entendi${nome}. Nesse caso é bem comum o pedido ficar só no INSS mesmo e acabar demorando ou sendo negado.\n\nAqui no escritório a gente analisa justamente se existe uma forma mais rápida ou segura de conseguir esse benefício.\n\nPra eu te orientar melhor, qual a sua idade?`;
-        }
-      }
-
-      const cleanText = text.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-      const calledWrongName = /\b(doutora|dra|senhora|senhor|moca)\b/i.test(cleanText);
-      const ehPrimeiraMensagem = !history || history.length === 0;
-      let prefixoCorrecao = "";
-      if (calledWrongName && !ehPrimeiraMensagem) {
-        prefixoCorrecao = "Pode me chamar de Lara. ";
-      }
-
-      const reply = `${prefixoCorrecao}Essa primeira consulta para entender o seu caso é totalmente gratuita. Primeiro deixa eu entender sua situação.\n\n${dryQuestion}`;
-      const newHistory = [...history, { role: 'user', content: text }, { role: 'assistant', content: reply }];
-
-      const updates = {
-        ...user_data,
-        history: newHistory,
-        state_fsm: stateFsm
-      };
-
-      await this.supabase.rpc('save_session_data', {
-        p_phone: phone,
-        p_step: session?.step || 'welcome',
-        p_user_data_updates: updates
-      });
-
-      console.log(`[INSTRUMENTAÇÃO] [${new Date().toISOString()}] [Lead: ${phone}] 💰 Resposta de honorários enviada: "${reply}"`);
-      return reply;
-    }
-
-    // 1. Extração prévia de campos do texto antes de qualquer coisa (bloco consolidado) - Removido daqui, rodado no topo!
-    // já declarado no topo
 
     if (this.detectarAutoBeneficiario(text)) {
       console.log(`[EXTRAÇÃO] Correção para auto-beneficiário detectada no texto: "${text}". Resetando beneficiario_terceiro.`);
@@ -1246,9 +774,61 @@ JSON de retorno:`;
       beneficiarioTerceiro = null;
     }
 
-    if (session && !isGreeting) {
-      // Já rodou no topo, só sincroniza para não quebrar referências posteriores
-      extractedData = session.user_data;
+    // Só tenta detectar um terceiro do zero se não estiver travado E estiver nas etapas de introdução
+    const fsmState = session?.user_data?.state_fsm;
+    const isInitialState = !fsmState || fsmState === 'AWAITING_NAME' || fsmState === 'AWAITING_LAWYER';
+    if (!beneficiarioTerceiro && !session?.user_data?.beneficiario_ja_confirmado && isInitialState) {
+      const detectedFamiliar = this.detectarBeneficiarioTerceiro(text);
+      if (detectedFamiliar) {
+        beneficiarioTerceiro = detectedFamiliar;
+        extractedData.beneficiario_terceiro = detectedFamiliar;
+      }
+    }
+
+    if (!isGreeting) {
+      const currentState = session?.user_data?.state_fsm || undefined;
+
+      if (this.detectarPerguntaEndereco(text)) {
+        console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 📍 Endereço detectado. Pulando extração de dados.`);
+      } else {
+        console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 3. Conteúdo enviado ao extractor: "${text}" (currentState: "${currentState}")`);
+        if (isAudio) {
+          console.log(`[INSTRUMENTAÇÃO ÁUDIO] [${timestamp}] [Lead: ${phone}] 4. Resultado enviado ao extractor: "${text}"`);
+        }
+        const rawExtracted = await this.runHybridExtraction(text, currentState);
+        extractedData = {
+          ...extractedData,
+          ...rawExtracted
+        };
+      }
+
+      if (session?.user_data?.beneficiario_terceiro && session?.user_data?.idade !== undefined && session?.user_data?.idade !== null) {
+        delete extractedData.idade;
+      }
+
+      // Trava para evitar que doenças já registradas sejam sobrescritas por negações em turnos posteriores
+      const oldDoenca = session?.user_data?.doenca;
+      if (oldDoenca && oldDoenca.toLowerCase() !== 'não' && oldDoenca.toLowerCase() !== 'nao' && oldDoenca.trim() !== '') {
+        delete extractedData.doenca;
+        delete extractedData.tem_doenca_ou_limitacao;
+      }
+
+      const oldDeficiencia = session?.user_data?.deficiencia;
+      if (oldDeficiencia && oldDeficiencia.toLowerCase() !== 'não' && oldDeficiencia.toLowerCase() !== 'nao' && oldDeficiencia.trim() !== '') {
+        delete extractedData.deficiencia;
+        delete extractedData.tem_deficiencia;
+      }
+
+      if (currentState === 'AWAITING_CURRENT_CONTRIBUTION' && session?.user_data?.reformulou_trabalho === true) {
+        if (extractedData.esta_contribuindo_atualmente === undefined) {
+          extractedData.esta_contribuindo_atualmente = false;
+        }
+      }
+      console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 4. Dados extraídos (híbrido): ${JSON.stringify(extractedData)}`);
+      if (isAudio) {
+        console.log(`[INSTRUMENTAÇÃO ÁUDIO] [${timestamp}] [Lead: ${phone}] 5. Campos extraídos do áudio: ${JSON.stringify(extractedData)}`);
+      }
+      console.log("📝 Dados extraídos previamente:", JSON.stringify(extractedData));
     }
 
     const currentHasLawyerAndUnrecoverable = session && (
@@ -1278,7 +858,7 @@ JSON de retorno:`;
       }
 
       const { data: reReadSession } = await this.supabase.from('sofia_sessions').select('*').eq('phone', phone).single();
-      console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 8. Estado relido após save: FSM="${reReadSession?.user_data?.state_fsm}", step="${reReadSession?.step}", user_data=${JSON.stringify(reReadSession?.user_data)}"`);
+      console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 8. Estado relido após save: FSM="${reReadSession?.user_data?.state_fsm}", step="${reReadSession?.step}", user_data=${JSON.stringify(reReadSession?.user_data)}`);
 
       const finalReply = `Entendo, ${nome}. Por questões éticas, nosso escritório não interfere em processos que já estão sendo conduzidos por outro advogado. O ideal é continuar com ele. Inclusive, se o seu caso for favorável, ter dois advogados geraria dois honorários, o que não seria bom pra você.`;
       console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 9. Resposta final enviada ao cliente: "${finalReply}"`);
@@ -1287,36 +867,26 @@ JSON de retorno:`;
 
     // GUARDA GLOBAL: Se a sessão já está no estado FINISHED, não processa nada - retorna mensagem de encerramento
     if (session && session.user_data?.state_fsm === 'FINISHED' && session.user_data?.status_final !== 'com_advogado') {
-      if (session.user_data?.triagem_encerrada_msg_enviada) {
-        console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] GUARDA GLOBAL FINISHED: Mensagem de encerramento já foi enviada. Ignorando silenciosamente.`);
-        return null;
-      }
-
       const cleanText = text.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
       const isThanks = /\b(obrigad|valeu|agradec|tks|thanks|obg)\b/i.test(cleanText);
       if (isThanks) {
         const respostaAgradecimento = "De nada, daqui alguns minutos um profissional entrará em contato com você.";
         console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] GUARDA GLOBAL FINISHED (AGRADECIMENTO): Retornando retribuição.`);
         console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 9. Resposta final enviada ao cliente: "${respostaAgradecimento}"`);
-        
-        // Marca como enviado também para não responder nem a agradecimentos futuros
+        return respostaAgradecimento;
+      }
+      
+      let respostaFinal = `Com base no que você me contou nossa equipe vai analisar melhor o seu caso. Assim que possível entraremos em contato novamente`;
+      if (session.user_data?.triagem_encerrada_msg_enviada) {
+        respostaFinal = "Essa parte específica só a nossa equipe consegue confirmar depois de analisar seu caso com calma — mas já registrei sua pergunta pra eles. Assim que tivermos uma resposta, entramos em contato.";
+      } else {
         const updates = { triagem_encerrada_msg_enviada: true };
         await this.supabase.rpc('save_session_data', {
           p_phone: phone,
           p_step: 'finished',
           p_user_data_updates: updates
         });
-        
-        return respostaAgradecimento;
       }
-      
-      const respostaFinal = `Com base no que você me contou nossa equipe vai analisar melhor o seu caso. Assim que possível entraremos em contato novamente`;
-      const updates = { triagem_encerrada_msg_enviada: true };
-      await this.supabase.rpc('save_session_data', {
-        p_phone: phone,
-        p_step: 'finished',
-        p_user_data_updates: updates
-      });
 
       console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] GUARDA GLOBAL FINISHED: sessão já encerrada. Retornando mensagem de handoff.`);
       console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 9. Resposta final enviada ao cliente: "${respostaFinal}"`);
@@ -1331,13 +901,14 @@ JSON de retorno:`;
 
       const defaultGreeting = `${saudacao}! Tudo bem?\nMe chamo Lara, sou atendente do escritório da Dra. Mônica Lucioli. Com quem eu falo?`;
 
-      // 3. Se o lead vier direto com problem sem dar o nome:
+      // 3. Se o lead vier direto com problema sem dar o nome:
       const leadSentProblemWithoutName = !extractedData.nome_usuario && (
         extractedData.idade || 
         extractedData.doenca || 
         extractedData.deficiencia || 
         extractedData.tempo_contribuicao || 
-        extractedData.inss_tempo_carteira
+        extractedData.inss_tempo_carteira || 
+        text.length > 30
       );
 
       if (leadSentProblemWithoutName) {
@@ -1399,7 +970,7 @@ JSON de retorno:`;
       if (resolved.fluxo_ativo) {
         initialUserData.fluxo_ativo = resolved.fluxo_ativo;
       }
-      console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 5. Estado calculated pela FSM: state="${resolved.state}", fluxo="${resolved.fluxo_ativo || 'N/A'}"`);
+      console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 5. Estado calculado pela FSM: state="${resolved.state}", fluxo="${resolved.fluxo_ativo || 'N/A'}"`);
 
       console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 6. Payload enviado ao Supabase: step="welcome", updates=${JSON.stringify(initialUserData)}`);
       const { data: createdUserData, error: initError } = await this.supabase.rpc('save_session_data', {
@@ -1415,7 +986,7 @@ JSON de retorno:`;
       }
 
       const { data: reReadSession } = await this.supabase.from('sofia_sessions').select('*').eq('phone', phone).single();
-      console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 8. Estado relido após save: FSM="${reReadSession?.user_data?.state_fsm}", step="${reReadSession?.step}", user_data=${JSON.stringify(reReadSession?.user_data)}"`);
+      console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 8. Estado relido após save: FSM="${reReadSession?.user_data?.state_fsm}", step="${reReadSession?.step}", user_data=${JSON.stringify(reReadSession?.user_data)}`);
 
       const newSessionData: any = {
         phone,
@@ -1429,6 +1000,61 @@ JSON de retorno:`;
       console.log(`🧠 Iniciando primeira interação do usuário. Processando com IA para saudação e apresentação...`);
       return this.handleStepWithAI(newSessionData, text);
     } else {
+      // Se a sessão já existe, verifica se houve mudança de nome do usuário para reiniciar a FSM se necessário
+      const currentUserData = session.user_data || {};
+      const oldNome = currentUserData.nome_usuario;
+      const newNome = extractedData.nome_usuario;
+
+      let updatedUserData = {
+        ...currentUserData,
+        ...extractedData
+      };
+
+      // Se um novo nome diferente for informado, resetamos o histórico e reiniciamos a FSM para o novo cliente
+      if (newNome && oldNome && newNome.trim().toLowerCase() !== oldNome.trim().toLowerCase()) {
+        console.log(`🔄 Novo nome detectado (${newNome} diferente de ${oldNome}). Reiniciando FSM da sessão...`);
+        updatedUserData = {
+          ...extractedData,
+          history: [
+            { role: 'assistant', content: `Olá! Tudo bem?\nMe chamo Lara, sou atendente do escritório da Dra. Mônica Lucioli. Com quem eu falo?` },
+            { role: 'user', content: text }
+          ],
+          state_fsm: 'AWAITING_NAME',
+          nome_usuario: newNome
+        };
+      }
+
+      // Resolve a FSM deterministicamente pós-extração
+      const resolved = this.resolveFSMState(updatedUserData);
+      updatedUserData.state_fsm = resolved.state;
+      if (resolved.fluxo_ativo) {
+        updatedUserData.fluxo_ativo = resolved.fluxo_ativo;
+      }
+      console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 5. Estado calculado pela FSM (pré-AI): state="${resolved.state}", fluxo="${resolved.fluxo_ativo || 'N/A'}"`);
+
+      // Se houver novos dados extraídos ou o histórico foi reiniciado, salva no banco de dados imediatamente
+      if (Object.keys(extractedData).length > 0 || (newNome && oldNome && newNome.trim().toLowerCase() !== oldNome.trim().toLowerCase())) {
+        console.log("💾 Salvando dados extraídos previamente no banco de dados...");
+        const updates = updatedUserData;
+        console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 6. Payload enviado ao Supabase (pré-AI): step=null, updates=${JSON.stringify(updates)}`);
+
+        const { data: newMergedData, error } = await this.supabase.rpc('save_session_data', {
+          p_phone: phone,
+          p_step: null,
+          p_user_data_updates: updates
+        });
+        
+        if (error) {
+          console.error(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 7. Falha na persistência (pré-AI): ${JSON.stringify(error)}`);
+        } else {
+          console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 7. Confirmação de persistência bem-sucedida (pré-AI). Data retornado: ${JSON.stringify(newMergedData)}`);
+          session.user_data = newMergedData || updatedUserData;
+        }
+
+        const { data: reReadSession } = await this.supabase.from('sofia_sessions').select('*').eq('phone', phone).single();
+        console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 8. Estado relido após save (pré-AI): FSM="${reReadSession?.user_data?.state_fsm}", step="${reReadSession?.step}", user_data=${JSON.stringify(reReadSession?.user_data)}`);
+      }
+
       return this.handleStepWithAI(session, text);
     }
   }
@@ -1535,6 +1161,113 @@ JSON de retorno:`;
       user_data.esclarecimento_pendente = esclarecimento;
     }
 
+    // GUARDA DETERMINÍSTICO PARA ENDEREÇO
+    if (this.detectarPerguntaEndereco(text)) {
+      const nome = user_data.nome_usuario ? `, ${user_data.nome_usuario}` : "";
+      const familiar = user_data.beneficiario_terceiro;
+      
+      // Pega a pergunta correspondente ao estado atual
+      let dryQuestion = "";
+      if (stateFsm === 'AWAITING_NAME') {
+        dryQuestion = "Boa tarde! Tudo bem?\nMe chamo Lara, sou atendente do escritório da Dra. Mônica Lucioli. Com quem eu falo?";
+      } else if (resolved.fluxo_ativo === 'EXCECAO') {
+        dryQuestion = EXCECAO_QUESTIONS[Math.floor(Math.random() * EXCECAO_QUESTIONS.length)];
+      } else {
+        let questionsList = STATE_QUESTIONS[stateFsm];
+        if (stateFsm === 'BPC_AWAITING_HOUSEHOLD_INCOME') {
+          const moraSozinho = user_data.bpc_pessoas_casa && (
+            String(user_data.bpc_pessoas_casa).toLowerCase().includes('sozinh') ||
+            String(user_data.bpc_pessoas_casa).toLowerCase().includes('moro só') ||
+            String(user_data.bpc_pessoas_casa).toLowerCase().includes('moro so') ||
+            String(user_data.bpc_pessoas_casa).toLowerCase().includes('apenas eu') ||
+            String(user_data.bpc_pessoas_casa).toLowerCase().includes('somente eu') ||
+            String(user_data.bpc_pessoas_casa).toLowerCase() === 'eu' ||
+            String(user_data.bpc_pessoas_casa).toLowerCase().includes('1 pessoa') ||
+            String(user_data.bpc_pessoas_casa).toLowerCase().includes('uma pessoa')
+          );
+          if (moraSozinho) {
+            questionsList = ["Você recebe algum dinheiro? Bolsa família, pensão, aposentadoria ou alguma outra renda?"];
+          }
+        }
+        dryQuestion = questionsList ? questionsList[Math.floor(Math.random() * questionsList.length)] : "";
+      }
+
+      // Se houver familiar, adapta
+      if (familiar) {
+        const fem = ['filha', 'esposa', 'mãe', 'neta', 'irmã', 'avó', 'tia', 'sogra', 'sobrinha', 'nora', 'enteada', 'companheira'].includes(familiar.toLowerCase());
+        const art = fem ? 'A sua' : 'O seu';
+        const artLC = fem ? 'sua' : 'seu';
+        const prep = fem ? 'da' : 'do';
+        const pron = fem ? 'ela' : 'ele';
+        const pronPoss = fem ? 'dela' : 'dele';
+
+        if (stateFsm === 'AWAITING_LAWYER') {
+          dryQuestion = `${art} ${familiar} já tem advogado cuidando do caso?`;
+        } else if (stateFsm === 'LAWYER_CHECK_ACTION') {
+          dryQuestion = `Esse advogado já entrou com ação na Justiça em nome ${prep} ${artLC} ${familiar} ou só deu entrada no INSS?`;
+        } else if (stateFsm === 'LAWYER_CHECK_CONTRACT') {
+          dryQuestion = `${art} ${familiar} chegou a assinar contrato com esse advogado?`;
+        } else if (stateFsm === 'LAWYER_CHECK_PROCURACAO') {
+          dryQuestion = `${art} ${familiar} assinou procuração para esse advogado representar ${pron}?`;
+        } else if (stateFsm === 'AWAITING_AGE') {
+          dryQuestion = `Qual a idade ${prep} ${artLC} ${familiar}?`;
+        } else if (stateFsm === 'AWAITING_DISEASE') {
+          dryQuestion = `${art} ${familiar} tem alguma doença atualmente?`;
+        } else if (stateFsm === 'AWAITING_DISABILITY') {
+          dryQuestion = `${art} ${familiar} tem alguma deficiência?`;
+        } else if (stateFsm === 'AWAITING_TOTAL_CONTRIBUTION') {
+          dryQuestion = `${art} ${familiar} já trabalhou de carteira assinada ou contribuiu para o INSS?`;
+        } else if (stateFsm === 'AWAITING_CURRENT_CONTRIBUTION') {
+          dryQuestion = `Como está a rotina de trabalho ${prep} ${artLC} ${familiar} hoje em dia? ${pron.toUpperCase()} está conseguindo trabalhar?`;
+        } else if (stateFsm === 'AWAITING_LAST_CONTRIBUTION_TIME') {
+          dryQuestion = `Tem quanto tempo que ${art.toLowerCase()} ${familiar} se afastou ou parou de trabalhar?`;
+        } else if (stateFsm === 'INSS_AWAITING_EMPLOYMENT_TYPE') {
+          dryQuestion = `Como ${art.toLowerCase()} ${familiar} contribuía para o INSS? Era por carteira assinada, carnê ou MEI?`;
+        } else if (stateFsm === 'INSS_AWAITING_LAST_CONTRIBUTION') {
+          dryQuestion = `Tem quanto tempo que ${art.toLowerCase()} ${familiar} se afastou? Foi em que ano?`;
+        } else if (stateFsm === 'INSS_AWAITING_REPORTS') {
+          dryQuestion = `${art} ${familiar} possui exames, receitas ou laudos médicos recentes?`;
+        } else if (stateFsm === 'BPC_AWAITING_HOUSEHOLD') {
+          dryQuestion = `Quem mora com ${art.toLowerCase()} ${familiar} na casa ${pronPoss} hoje?`;
+        } else if (stateFsm === 'BPC_AWAITING_HOUSEHOLD_INCOME') {
+          dryQuestion = `Das pessoas que moram com ${art.toLowerCase()} ${familiar}, alguém trabalha ou recebe algum dinheiro?`;
+        } else if (stateFsm === 'BPC_AWAITING_HOME_STATUS') {
+          dryQuestion = `A casa ${prep} ${artLC} ${familiar} é própria, alugada ou cedida?`;
+        } else if (stateFsm === 'BPC_AWAITING_CADUNICO') {
+          dryQuestion = `${art} ${familiar} possui CadÚnico atualizado?`;
+        }
+      }
+
+      // Se o estado for AWAITING_AGE e is_recoverable for true, usa a pergunta otimizada comercialmente!
+      const transitionAlreadySent = history.some((h: any) => h.role === 'assistant' && h.content.includes("é bem comum o pedido ficar só no INSS mesmo"));
+      if (stateFsm === 'AWAITING_AGE' && user_data.is_recoverable === true && !transitionAlreadySent) {
+        if (familiar) {
+          const fem = ['filha', 'esposa', 'mãe', 'neta', 'irmã', 'avó', 'tia', 'sogra', 'sobrinha', 'nora', 'enteada', 'companheira'].includes(familiar.toLowerCase());
+          const art = fem ? 'a sua' : 'o seu';
+          const artLC = fem ? 'sua' : 'seu';
+          const prep = fem ? 'da' : 'do';
+          dryQuestion = `Entendi${nome}. Nesse caso é bem comum o pedido ficar só no INSS mesmo e acabar demorando ou sendo negado.\n\nAqui no escritório a gente analisa justamente se existe uma forma mais rápida ou segura de conseguir esse benefício para ${art} ${familiar}.\n\nPra eu te orientar melhor, qual a idade ${prep} ${artLC} ${familiar}?`;
+        } else {
+          dryQuestion = `Entendi${nome}. Nesse caso é bem comum o pedido ficar só no INSS mesmo e acabar demorando ou sendo negado.\n\nAqui no escritório a gente analisa justamente se existe uma forma mais rápida ou segura de conseguir esse benefício.\n\nPra eu te orientar melhor, qual a sua idade?`;
+        }
+      }
+
+      const reply = `Nosso escritório fica localizado na Avenida Cardoso Saraiva, 688, Matias Barbosa MG. Atendimento presencial em Matias e Juiz de Fora.\n\nAtendemos on-line em todo Brasil.\n\n${dryQuestion}`;
+      const newHistory = [...history, { role: 'user', content: text }, { role: 'assistant', content: reply }];
+
+      await this.supabase.rpc('save_session_data', {
+        p_phone: phone,
+        p_step: session?.step || null,
+        p_user_data_updates: {
+          history: newHistory,
+          state_fsm: stateFsm
+        }
+      });
+
+      console.log(`[INSTRUMENTAÇÃO] [${new Date().toISOString()}] [Lead: ${phone}] 9. Resposta de endereço enviada: "${reply}"`);
+      return reply;
+    }
+
     // GUARDA DETERMINÍSTICO 0: Se o estado calculado for FINISHED, encerra deterministamente sem chamar a IA
     if (stateFsm === 'FINISHED') {
       const finalReply = "Com base no que você me contou nossa equipe vai analisar melhor o seu caso. Assim que possível entraremos em contato novamente";
@@ -1576,8 +1309,7 @@ JSON de retorno:`;
       
       const updates = {
         history: newHistory,
-        state_fsm: 'AWAITING_AGE',
-        score_total: calcularScorePrevidenciario(user_data)
+        state_fsm: 'AWAITING_AGE'
       };
 
       await this.supabase.rpc('save_session_data', {
@@ -1673,30 +1405,11 @@ JSON de retorno:`;
           String(user_data.bpc_pessoas_casa).toLowerCase().includes('sozinh') ||
           String(user_data.bpc_pessoas_casa).toLowerCase().includes('moro só') ||
           String(user_data.bpc_pessoas_casa).toLowerCase().includes('moro so') ||
-          String(user_data.bpc_pessoas_casa).toLowerCase().includes('moro solo') ||
-          String(user_data.bpc_pessoas_casa).toLowerCase().includes('vivo só') ||
-          String(user_data.bpc_pessoas_casa).toLowerCase().includes('vivo so') ||
           String(user_data.bpc_pessoas_casa).toLowerCase().includes('apenas eu') ||
           String(user_data.bpc_pessoas_casa).toLowerCase().includes('somente eu') ||
-          String(user_data.bpc_pessoas_casa).toLowerCase().includes('só eu') ||
-          String(user_data.bpc_pessoas_casa).toLowerCase().includes('so eu') ||
-          String(user_data.bpc_pessoas_casa).toLowerCase().includes('eu mesmo') ||
-          String(user_data.bpc_pessoas_casa).toLowerCase().includes('eu mesma') ||
-          String(user_data.bpc_pessoas_casa).toLowerCase().includes('eu sozinho') ||
-          String(user_data.bpc_pessoas_casa).toLowerCase().includes('eu sozinha') ||
-          String(user_data.bpc_pessoas_casa).toLowerCase().includes('ninguem mais') ||
-          String(user_data.bpc_pessoas_casa).toLowerCase().includes('ninguém mais') ||
-          String(user_data.bpc_pessoas_casa).toLowerCase().includes('moro sem ninguem') ||
-          String(user_data.bpc_pessoas_casa).toLowerCase().includes('não moro com ninguém') ||
-          String(user_data.bpc_pessoas_casa).toLowerCase().includes('nao moro com ninguem') ||
           String(user_data.bpc_pessoas_casa).toLowerCase() === 'eu' ||
-          String(user_data.bpc_pessoas_casa).toLowerCase() === 'so' ||
-          String(user_data.bpc_pessoas_casa).toLowerCase() === 'só' ||
           String(user_data.bpc_pessoas_casa).toLowerCase().includes('1 pessoa') ||
-          String(user_data.bpc_pessoas_casa).toLowerCase().includes('uma pessoa') ||
-          String(user_data.bpc_pessoas_casa).toLowerCase().includes('moro individual') ||
-          String(user_data.bpc_pessoas_casa).toLowerCase().includes('resido só') ||
-          String(user_data.bpc_pessoas_casa).toLowerCase().includes('resido so')
+          String(user_data.bpc_pessoas_casa).toLowerCase().includes('uma pessoa')
         );
         if (moraSozinho) {
           questionsList = ["Você recebe algum dinheiro? Bolsa família, pensão, aposentadoria ou alguma outra renda?"];
@@ -1822,30 +1535,9 @@ JSON de retorno:`;
       const moraSozinho = String(user_data.bpc_pessoas_casa).toLowerCase().includes('sozinh') ||
                           String(user_data.bpc_pessoas_casa).toLowerCase().includes('moro só') ||
                           String(user_data.bpc_pessoas_casa).toLowerCase().includes('moro so') ||
-                          String(user_data.bpc_pessoas_casa).toLowerCase().includes('moro solo') ||
-                          String(user_data.bpc_pessoas_casa).toLowerCase().includes('vivo só') ||
-                          String(user_data.bpc_pessoas_casa).toLowerCase().includes('vivo so') ||
                           String(user_data.bpc_pessoas_casa).toLowerCase().includes('apenas eu') ||
                           String(user_data.bpc_pessoas_casa).toLowerCase().includes('somente eu') ||
-                          String(user_data.bpc_pessoas_casa).toLowerCase().includes('só eu') ||
-                          String(user_data.bpc_pessoas_casa).toLowerCase().includes('so eu') ||
-                          String(user_data.bpc_pessoas_casa).toLowerCase().includes('eu mesmo') ||
-                          String(user_data.bpc_pessoas_casa).toLowerCase().includes('eu mesma') ||
-                          String(user_data.bpc_pessoas_casa).toLowerCase().includes('eu sozinho') ||
-                          String(user_data.bpc_pessoas_casa).toLowerCase().includes('eu sozinha') ||
-                          String(user_data.bpc_pessoas_casa).toLowerCase().includes('ninguem mais') ||
-                          String(user_data.bpc_pessoas_casa).toLowerCase().includes('ninguém mais') ||
-                          String(user_data.bpc_pessoas_casa).toLowerCase().includes('moro sem ninguem') ||
-                          String(user_data.bpc_pessoas_casa).toLowerCase().includes('não moro com ninguém') ||
-                          String(user_data.bpc_pessoas_casa).toLowerCase().includes('nao moro com ninguem') ||
-                          String(user_data.bpc_pessoas_casa).toLowerCase() === 'eu' ||
-                          String(user_data.bpc_pessoas_casa).toLowerCase() === 'so' ||
-                          String(user_data.bpc_pessoas_casa).toLowerCase() === 'só' ||
-                          String(user_data.bpc_pessoas_casa).toLowerCase().includes('1 pessoa') ||
-                          String(user_data.bpc_pessoas_casa).toLowerCase().includes('uma pessoa') ||
-                          String(user_data.bpc_pessoas_casa).toLowerCase().includes('moro individual') ||
-                          String(user_data.bpc_pessoas_casa).toLowerCase().includes('resido só') ||
-                          String(user_data.bpc_pessoas_casa).toLowerCase().includes('resido so');
+                          String(user_data.bpc_pessoas_casa).toLowerCase() === 'eu';
       if (moraSozinho) {
         confirmParts.push("mora sozinha");
       } else {
@@ -1888,23 +1580,10 @@ JSON de retorno:`;
       const selectedQuestion = familiar 
         ? `O seu ${familiar} tem alguma deficiência física, visual, auditiva ou motora?`
         : "Você tem alguma deficiência física, visual, auditiva ou motora?";
-      const reply = confirmPrefixToPrepend ? `${confirmPrefixToPrepend}${selectedQuestion}` : selectedQuestion;
-      
-      const newHistory = [...history, { role: 'user', content: text }, { role: 'assistant', content: reply }];
-      const updates = {
-        ...user_data,
-        history: newHistory,
-        state_fsm: 'AWAITING_DISABILITY'
-      };
-
-      await this.supabase.rpc('save_session_data', {
-        p_phone: phone,
-        p_step: this.mapFsmToStep('AWAITING_DISABILITY'),
-        p_user_data_updates: updates
-      });
-
-      console.log(`[INSTRUMENTAÇÃO] [${new Date().toISOString()}] [Lead: ${phone}] 9. Resposta do sub-fluxo de deficiência enviada (bypassing LLM): "${reply}"`);
-      return reply;
+      if (confirmPrefixToPrepend) {
+        return `${confirmPrefixToPrepend}${selectedQuestion}`;
+      }
+      return selectedQuestion;
     }
 
     const promptSofia = `Você é Lara, atendente humana do escritório de advocacia previdenciária da Dra. Mônica Lucioli.
@@ -1930,7 +1609,7 @@ DIRETRIZES DE COMUNICAÇÃO E REGRAS DE NEGÓCIO (OBRIGATÓRIO):
 10. PROIBIDO AJUDA INFORMAL EXTERNA (AMIGOS/VIZINHOS/DOAÇÕES): É terminantemente proibido perguntar se o cliente recebe ajuda informal, doações, cesta básica ou auxílios informais de amigos, vizinhos ou parentes de fora. Essa pergunta NÃO faz parte do fluxo do BPC. ATENÇÃO: Esta proibição se refere apenas a auxílios informais externos. É OBRIGATÓRIO e legítimo perguntar sobre a renda formal ou trabalho dos moradores que residem na mesma casa (salário, aposentadoria, pensão, benefício) quando estiver no estado BPC_AWAITING_HOUSEHOLD_INCOME.
 11. DESVIOS DE ASSUNTO E OFF-TOPIC: Caso o usuário mude de assunto, faça reclamações sobre o governo ou INSS, faça perguntas pessoais (como "qual seu nome?", "quem é você?") ou diga coisas fora da triagem, dê uma resposta extremamente curta de empatia ou esclarecimento (1 única frase curta, variando os termos para nunca parecer repetitiva, ex: "Entendo a sua preocupação", "Te compreendo", etc.) e em seguida retorne para a pergunta base abaixo.
 12. SIMPLIFICAÇÃO DA PERGUNTA DE ADVOGADO: Se a pergunta base for sobre advogado, reescreva-a SEMPRE usando linguagem extremamente simples e acessível para idosos, como 'Você já tem advogado cuidando do seu caso?' ou 'Já tem advogado te ajudando?'. É TERMINANTEMENTE PROIBIDO usar termos complexos como 'representando você nesse processo' ou 'representação legal'.
-13. RECONHECIMENTO CONTEXTUAL OBRIGATÓRIO (CRÍTICO): Antes de fazer a pergunta seguinte, você DEVE sempre demonstrar que entendeu e prestou atenção na última mensagem do cliente — mesmo que seja curta, uma dúvida, um comentário ou apenas uma resposta direta. É TERMINANTEMENTE PROIBIDO ignorar o que o cliente disse e simplesmente emendar a próxima pergunta de forma seca e desconectada, como se fosse um robô que não leu a mensagem anterior. Se a última mensagem do cliente contiver uma pergunta, dúvida ou comentário (de qualquer forma que seja escrito), responda em 1 frase curta e humana reconhecendo isso ANTES de fazer a próxima pergunta. Se for apenas uma resposta direta sem nada embutido, ainda assim é permitido reconhecer brevemente antes de seguir, mas sem se alongar. ATENÇÃO: É terminantemente proibido repetir, ecoar ou colar trechos literais da mensagem do cliente na sua fala (por exemplo, se o cliente disser "ela se chama Lucimar", não repita "ela se chama Lucimar" na sua resposta). Apenas reconheça de forma muito natural e faça a pergunta correspondente.
+13. RECONHECIMENTO CONTEXTUAL OBRIGATÓRIO (CRÍTICO): Antes de fazer a pergunta seguinte, você DEVE sempre demonstrar que entendeu e prestou atenção na última mensagem do cliente — mesmo que seja curta, uma dúvida, um comentário ou apenas uma resposta direta. É TERMINANTEMENTE PROIBIDO ignorar o que o cliente disse e simplesmente emendar a próxima pergunta de forma seca e desconectada, como se fosse um robô que não leu a mensagem anterior. Se a última mensagem do cliente contiver uma pergunta, dúvida ou comentário (de qualquer forma que seja escrito), responda em 1 frase curta e humana reconhecendo isso ANTES de fazer a próxima pergunta. Se for apenas uma resposta direta sem nada embutido, ainda assim é permitido reconhecer brevemente antes de seguir, mas sem se alongar.
 
 
 DIRETRIZ CRÍTICA DE HUMANIZAÇÃO COM CONTEXTO:
@@ -2163,17 +1842,173 @@ Gere a resposta da Lara (retorne APENAS o texto reescrito da pergunta base, sem 
       delete user_data.contexto_offtopic;
     }
 
-    // Calcular pontuação de lead baseada na lógica centralizada (escala 0-100)
-    const historyWithCurrentText = [
-      ...history,
-      { role: 'user', content: text }
-    ];
-    const score_percent = calcularScorePrevidenciario({
-      ...user_data,
-      history: historyWithCurrentText
-    });
+    // Calcular pontuação de lead baseada na fórmula unificada (escala 0-100)
+    let scoreValue = 0;
+    
+    // Helper parsers for early detection
+    const parseAgeLocal = (v: any) => {
+      if (!v) return 0;
+      const match = String(v).match(/\d+/);
+      return match ? parseInt(match[0], 10) : 0;
+    };
+    const parseContribLocal = (v: any) => {
+      if (!v) return 0;
+      const match = String(v).match(/\d+/);
+      return match ? parseInt(match[0], 10) : 0;
+    };
 
+    const ageNumForDetect = parseAgeLocal(user_data?.idade);
+    const contribYearsForDetect = parseContribLocal(
+      user_data?.inss_tempo_carteira ||
+      user_data?.tempo_contribuicao
+    );
+    const hasDiseaseForDetect = user_data?.tem_doenca_ou_limitacao === true;
+
+    const hasAposeText = history.some((h: any) => 
+      String(h.content || "").toLowerCase().includes("aposentar") || 
+      String(h.content || "").toLowerCase().includes("aposentadoria")
+    ) || text.toLowerCase().includes("aposentar") || text.toLowerCase().includes("aposentadoria");
+
+    const isAposentadoria = (
+      user_data?.fluxo_ativo === 'APOSENTADORIA' ||
+      (
+        user_data?.fluxo_ativo !== 'BPC_IDOSO' &&
+        user_data?.fluxo_ativo !== 'BPC_DEFICIENTE' &&
+        user_data?.ja_contribuiu !== false &&
+        ((ageNumForDetect >= 55 || contribYearsForDetect >= 15) || hasAposeText) &&
+        !hasDiseaseForDetect
+      )
+    );
+    
+    if (isAposentadoria) {
+      // 1. Tempo de Contribuição relevante
+      const parseContrib = (v: any) => {
+        if (!v) return 0;
+        const match = String(v).match(/\d+/);
+        return match ? parseInt(match[0], 10) : 0;
+      };
+      const contribYears = parseContrib(
+        user_data?.inss_tempo_carteira ||
+        user_data?.tempo_contribuicao
+      );
+      if (contribYears >= 28) {
+        scoreValue += 40;
+      } else if (contribYears >= 15 && contribYears <= 27) {
+        scoreValue += 25;
+      }
+
+      // 2. Idade
+      const parseAge = (v: any) => {
+        if (!v) return 0;
+        const match = String(v).match(/\d+/);
+        return match ? parseInt(match[0], 10) : 0;
+      };
+      const ageNum = parseAge(user_data?.idade);
+      if (ageNum >= 60) {
+        scoreValue += 20;
+      } else if (ageNum >= 55 && ageNum <= 59) {
+        scoreValue += 15;
+      }
+
+      // 3. Sem advogado
+      const hasLawyer = user_data?.has_lawyer === true;
+      if (!hasLawyer) {
+        scoreValue += 15;
+      }
+
+      // 4. Carteira assinada
+      const workHistory = String(
+        user_data?.retirement_work_history ||
+        user_data?.inss_como_contribuiu ||
+        ""
+      ).toLowerCase();
+      if (workHistory.includes('carteira') || workHistory.includes('assinado') || workHistory.includes('registro')) {
+        scoreValue += 10;
+      }
+
+      // 5. Trabalho especial ou rural
+      const specialRural = String(
+        user_data?.retirement_special_rural ||
+        ""
+      ).toLowerCase();
+      const hasSpecial = (
+        specialRural.includes('especial') ||
+        specialRural.includes('insalubre') ||
+        specialRural.includes('perigo') ||
+        specialRural.includes('ruido') ||
+        specialRural.includes('quimico') ||
+        specialRural.includes('calor') ||
+        specialRural.includes('eletricidade')
+      );
+      const hasRural = (
+        specialRural.includes('rural') ||
+        specialRural.includes('roça') ||
+        specialRural.includes('campo') ||
+        specialRural.includes('lavoura') ||
+        specialRural.includes('colono')
+      );
+      if (hasSpecial || hasRural) {
+        scoreValue += 20;
+      }
+
+      // 6. Documentos em mãos
+      const hasDocs = user_data?.tem_docs_em_maos === true;
+      if (hasDocs) {
+        scoreValue += 10;
+      }
+    } else {
+      // 1. Idade >= 65 anos: +40 pts
+      const parseAge = (v: any) => {
+        if (!v) return 0;
+        const match = String(v).match(/\d+/);
+        return match ? parseInt(match[0], 10) : 0;
+      };
+      const ageNum = parseAge(user_data?.idade);
+      if (ageNum >= 65) scoreValue += 40;
+
+      // 2. Nunca contribuiu: +20 pts
+      const neverContrib = user_data?.ja_contribuiu === false ||
+                           String(user_data?.inss_tempo_carteira).toLowerCase() === 'nenhum' ||
+                           String(user_data?.tempo_parou_contribuir).toLowerCase() === 'nunca' ||
+                           String(user_data?.inss_ultima_contribuicao).toLowerCase().includes('não contribuiu');
+      if (neverContrib) scoreValue += 20;
+
+      // 3. Renda per capita baixa: +20 pts
+      const rendaVal = String(user_data?.bpc_quem_renda || "").toLowerCase();
+      const isLowIncome = user_data?.has_no_income === true || 
+                          user_data?.sem_renda === true ||
+                          rendaVal.includes("nenhum") || 
+                          rendaVal.includes("ninguem") || 
+                          rendaVal.includes("sem renda") || 
+                          rendaVal.includes("não tem") ||
+                          rendaVal.includes("não possui") ||
+                          (rendaVal.match(/\d+/) && parseInt((rendaVal.match(/\d+/) || ["0"])[0]) <= 706);
+      if (isLowIncome) scoreValue += 20;
+
+      // 4. Mora sozinho/família baixa renda: +10 pts
+      const moraSozinhoOuBaixaRenda = String(user_data?.bpc_pessoas_casa).toLowerCase().includes("sozinh") ||
+                                      user_data?.bpc_pessoas_casa === 1 ||
+                                      user_data?.bpc_pessoas_casa === '1' ||
+                                      isLowIncome;
+      if (moraSozinhoOuBaixaRenda) scoreValue += 10;
+
+      // 5. CadÚnico ativo: +10 pts
+      const cadUnicoAtivo = user_data?.bpc_cad_unico === true || user_data?.has_cad_unico === true;
+      if (cadUnicoAtivo) scoreValue += 10;
+
+      // 6. Doença ou limitação grave: +15 pts
+      if (user_data?.tem_doenca_ou_limitacao === true) scoreValue += 15;
+
+      // 7. Deficiência: +20 pts
+      if (user_data?.tem_deficiencia === true) scoreValue += 20;
+
+      // 8. Acamado ou dependente: +25 pts
+      if (user_data?.is_bedridden === true) scoreValue += 25;
+    }
+
+    let score_percent = Math.min(100, scoreValue);
     if (user_data?.has_lawyer === true && user_data?.is_recoverable !== true) {
+      score_percent = 0;
       user_data.status_final = 'com_advogado';
     }
 
@@ -2354,9 +2189,6 @@ Gere a resposta da Lara (retorne APENAS o texto reescrito da pergunta base, sem 
         userData.esta_contribuindo_atualmente = true;
       } else if (isInformal) {
         userData.esta_contribuindo_atualmente = false;
-      } else {
-        // Fallback: se trabalha atualmente e não foi especificado como informal, assume-se que está contribuindo atualmente (seguro para evitar a pergunta de rotina)
-        userData.esta_contribuindo_atualmente = true;
       }
     } else if (userData.trabalha_atualmente === false) {
       userData.esta_contribuindo_atualmente = false;
@@ -2554,13 +2386,6 @@ Gere a resposta da Lara (retorne APENAS o texto reescrito da pergunta base, sem 
       }
       if (userData.bpc_cad_unico === undefined || userData.bpc_cad_unico === null) {
         return { state: 'BPC_AWAITING_CADUNICO', fluxo_ativo };
-      }
-
-      // Para BPC Deficiente, também pergunta sobre laudos médicos para provar a deficiência
-      if (fluxo_ativo === 'BPC_DEFICIENTE') {
-        if (userData.inss_laudos_medicos === undefined || userData.inss_laudos_medicos === null) {
-          return { state: 'INSS_AWAITING_REPORTS', fluxo_ativo };
-        }
       }
       
       // Todas as perguntas de BPC respondidas! Se chegou aqui e não desqualificou, qualifica BPC!

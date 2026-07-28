@@ -18,7 +18,27 @@ dotenv.config();
 
 // Evita duplicação de conexões ativas
 let activeSock: any = null;
+let isConnecting = false;
 const startupTime = Math.floor(Date.now() / 1000);
+
+function isWhisperHallucination(text: string): boolean {
+    if (!text) return false;
+    const clean = text.trim().toLowerCase().replace(/[.,\/#!$%\^&\*;:{}=\-_`~()?]/g,"").trim();
+    const hallucinations = [
+        'obrigado',
+        'obrigada',
+        'muito obrigado',
+        'muito obrigada',
+        'thank you',
+        'thank you so much',
+        'you',
+        'subtitles by',
+        'assista',
+        'youtube',
+        'inscreva'
+    ];
+    return hallucinations.includes(clean);
+}
 
 interface UserBuffer {
     texts: string[];
@@ -81,282 +101,298 @@ function getMessageContent(msg: any) {
 }
 
 async function connectToWhatsApp() {
-    const { state, saveCreds } = await useSupabaseAuthState('sofia_principal');
-    const { version } = await fetchLatestBaileysVersion();
-    const sofia = new SofiaEngine();
-
-    // Fecha a conexão antiga se houver uma ativa para evitar acúmulo de listeners e sockets abertos
-    if (activeSock) {
-        console.log('🔄 Fechando conexão anterior do WhatsApp para evitar duplicidade...');
-        const oldSock = activeSock;
-        activeSock = null; // Desmarca para evitar que o evento 'close' do oldSock dispare reconexão
-        try {
-            oldSock.ws.close();
-        } catch (err) {
-            console.error('Erro ao fechar conexão anterior:', err);
-        }
+    if (isConnecting) {
+        console.log('⚠️ Tentativa de conexão ao WhatsApp já está em andamento. Ignorando chamada recursiva/duplicada.');
+        return;
     }
+    isConnecting = true;
+    
+    try {
+        const { state, saveCreds } = await useSupabaseAuthState('sofia_principal');
+        const { version } = await fetchLatestBaileysVersion();
+        const sofia = new SofiaEngine();
 
-    const sock = makeWASocket({
-        version,
-        auth: state,
-        printQRInTerminal: true,
-        logger: pino({ level: 'silent' })
-    });
-
-    activeSock = sock;
-
-    sock.ev.on('creds.update', saveCreds);
-
-    sock.ev.on('connection.update', async (update) => {
-        const { connection, lastDisconnect, qr } = update;
-        
-        if (qr) {
-            console.log('--- GERANDO IMAGEM DO QR CODE ---');
-            await QRCode.toFile('./qr.png', qr);
-            console.log('✅ Imagem qr.png gerada com sucesso!');
-        }
-
-        if (connection === 'close') {
-            const statusCode = (lastDisconnect?.error as Boom)?.output?.statusCode;
-            console.log(`🔌 Conexão fechada. Código: ${statusCode}`);
-            
-            // Só reconecta se este socket ainda for o socket ativo
-            if (sock === activeSock) {
-                if (statusCode === DisconnectReason.loggedOut) {
-                    console.log('🚪 Sessão encerrada.');
-                } else {
-                    console.log('🔄 Reconectando WhatsApp em 5 segundos...');
-                    setTimeout(() => connectToWhatsApp(), 5000);
-                }
-            } else {
-                console.log('ℹ️ Conexão antiga descartada, ignorando reconexão recursiva.');
+        // Fecha a conexão antiga se houver uma ativa para evitar acúmulo de listeners e sockets abertos
+        if (activeSock) {
+            console.log('🔄 Fechando conexão anterior do WhatsApp para evitar duplicidade...');
+            const oldSock = activeSock;
+            activeSock = null; // Desmarca para evitar que o evento 'close' do oldSock dispare reconexão
+            try {
+                oldSock.ws.close();
+            } catch (err) {
+                console.error('Erro ao fechar conexão anterior:', err);
             }
-        } else if (connection === 'open') {
-            console.log('✅ LARA CONECTADA E OUVINDO ÁUDIOS!');
-            console.log('👤 Usuário conectado:', JSON.stringify(sock.user || {}, null, 2));
+        }
 
-            // Inicia a rotina periódica de follow-up (a cada 1 minuto)
-            const followupInterval = setInterval(() => {
-                if (activeSock === sock) {
-                    checkFollowUps(sock);
+        const sock = makeWASocket({
+            version,
+            auth: state,
+            printQRInTerminal: true,
+            logger: pino({ level: 'silent' })
+        });
+
+        activeSock = sock;
+
+        sock.ev.on('creds.update', saveCreds);
+
+        sock.ev.on('connection.update', async (update) => {
+            const { connection, lastDisconnect, qr } = update;
+            
+            if (qr) {
+                console.log('--- GERANDO IMAGEM DO QR CODE ---');
+                await QRCode.toFile('./qr.png', qr);
+                console.log('✅ Imagem qr.png gerada com sucesso!');
+            }
+
+            if (connection === 'close') {
+                const statusCode = (lastDisconnect?.error as Boom)?.output?.statusCode;
+                console.log(`🔌 Conexão fechada. Código: ${statusCode}`);
+                
+                // Só reconecta se este socket ainda for o socket ativo
+                if (sock === activeSock) {
+                    if (statusCode === DisconnectReason.loggedOut) {
+                        console.log('🚪 Sessão encerrada.');
+                    } else {
+                        console.log('🔄 Reconectando WhatsApp em 5 segundos...');
+                        setTimeout(() => connectToWhatsApp(), 5000);
+                    }
                 } else {
-                    clearInterval(followupInterval);
+                    console.log('ℹ️ Conexão antiga descartada, ignorando reconexão recursiva.');
                 }
-            }, 60000); // Roda a cada minuto
+            } else if (connection === 'open') {
+                console.log('✅ LARA CONECTADA E OUVINDO ÁUDIOS!');
+                console.log('👤 Usuário conectado:', JSON.stringify(sock.user || {}, null, 2));
+
+                // Inicia a rotina periódica de follow-up (a cada 1 minuto)
+                const followupInterval = setInterval(() => {
+                    if (activeSock === sock) {
+                        checkFollowUps(sock);
+                    } else {
+                        clearInterval(followupInterval);
+                    }
+                }, 60000); // Roda a cada minuto
+            }
+        });
+
+        // Função para acionar o processamento com debounce
+        function triggerBufferProcess(fromRaw: string) {
+            const buffer = messageBuffers.get(fromRaw);
+            if (!buffer) return;
+
+            // Cancela o timeout de debounce anterior para prorrogar o tempo enquanto o cliente envia mensagens
+            if (buffer.timeout) {
+                clearTimeout(buffer.timeout);
+            }
+
+            buffer.timeout = setTimeout(async () => {
+                buffer.timeout = null;
+                await processBuffer(fromRaw);
+            }, 5000); // 5 segundos de debounce
         }
-    });
 
-    // Função para acionar o processamento com debounce
-    function triggerBufferProcess(fromRaw: string) {
-        const buffer = messageBuffers.get(fromRaw);
-        if (!buffer) return;
+        // Função assíncrona para processar o buffer do usuário
+        async function processBuffer(fromRaw: string) {
+            const buffer = messageBuffers.get(fromRaw);
+            if (!buffer) return;
 
-        // Cancela o timeout de debounce anterior para prorrogar o tempo enquanto o cliente envia mensagens
-        if (buffer.timeout) {
-            clearTimeout(buffer.timeout);
-        }
+            // Adiciona o número ao lock de processamento ativo
+            processing.add(fromRaw);
+            
+            let textsToProcess: string[] = [];
+            let audiosToProcess: any[] = [];
+            let keysToProcess: any[] = [];
 
-        buffer.timeout = setTimeout(async () => {
-            buffer.timeout = null;
-            await processBuffer(fromRaw);
-        }, 5000); // 5 segundos de debounce
-    }
+            try {
+                textsToProcess = [...buffer.texts];
+                audiosToProcess = [...buffer.audioMessages];
+                keysToProcess = [...buffer.messageKeys];
 
-    // Função assíncrona para processar o buffer do usuário
-    async function processBuffer(fromRaw: string) {
-        const buffer = messageBuffers.get(fromRaw);
-        if (!buffer) return;
+                const from = fromRaw.replace(/\D/g, '');
+                console.log(`🧠 Processando buffer de ${from} com ${textsToProcess.length} textos e ${audiosToProcess.length} áudios...`);
 
-        // Adiciona o número ao lock de processamento ativo
-        processing.add(fromRaw);
-        
-        let textsToProcess: string[] = [];
-        let audiosToProcess: any[] = [];
-        let keysToProcess: any[] = [];
+                let consolidatedText = textsToProcess.join(" \n ");
 
-        try {
-            textsToProcess = [...buffer.texts];
-            audiosToProcess = [...buffer.audioMessages];
-            keysToProcess = [...buffer.messageKeys];
-
-            const from = fromRaw.replace(/\D/g, '');
-            console.log(`🧠 Processando buffer de ${from} com ${textsToProcess.length} textos e ${audiosToProcess.length} áudios...`);
-
-            let consolidatedText = textsToProcess.join(" \n ");
-
-            // Transcreve áudios acumulados sequencialmente
-            for (let i = 0; i < audiosToProcess.length; i++) {
-                const audioMsg = audiosToProcess[i];
-                console.log(`🎙️ Baixando/transcrevendo áudio ${i + 1}/${audiosToProcess.length} de ${from}...`);
-                try {
-                    const media = await downloadMediaMessage(
-                        audioMsg,
-                        'buffer',
-                        {},
-                        { logger: undefined, reuploadRequest: sock.updateMediaMessage }
-                    ) as Buffer;
-                    if (media) {
-                        const transcript = await sofia.transcribeAudio(media);
-                        if (transcript) {
-                            if (consolidatedText) {
-                                consolidatedText += ` \n [Áudio ${i + 1} Transcrito]: ${transcript}`;
-                            } else {
-                                consolidatedText = transcript;
+                // Transcreve áudios acumulados sequencialmente
+                for (let i = 0; i < audiosToProcess.length; i++) {
+                    const audioMsg = audiosToProcess[i];
+                    console.log(`🎙️ Baixando/transcrevendo áudio ${i + 1}/${audiosToProcess.length} de ${from}...`);
+                    try {
+                        const media = await downloadMediaMessage(
+                            audioMsg,
+                            'buffer',
+                            {},
+                            { logger: undefined, reuploadRequest: sock.updateMediaMessage }
+                        ) as Buffer;
+                        if (media) {
+                            const transcript = await sofia.transcribeAudio(media);
+                            if (transcript) {
+                                if (isWhisperHallucination(transcript)) {
+                                    console.log(`⚠️ [HALLUCINATION] Ignorando áudio de ${from} por provável alucinação do Whisper: "${transcript}"`);
+                                    continue;
+                                }
+                                if (consolidatedText) {
+                                    consolidatedText += ` \n [Áudio ${i + 1} Transcrito]: ${transcript}`;
+                                } else {
+                                    consolidatedText = transcript;
+                                }
                             }
                         }
-                    }
-                } catch (errDownload) {
-                    console.error("Erro ao baixar/transcrever áudio no buffer:", errDownload);
-                }
-            }
-
-            if (consolidatedText) {
-                // Marca mensagens como lidas
-                for (const key of keysToProcess) {
-                    try {
-                        await sock.readMessages([key]);
-                    } catch (errRead) {
-                        console.warn("Erro ao marcar mensagem como lida:", errRead);
+                    } catch (errDownload) {
+                        console.error("Erro ao baixar/transcrever áudio no buffer:", errDownload);
                     }
                 }
 
-                console.log(`🧠 Lara processando entrada do buffer de ${from}: "${consolidatedText.substring(0, 100)}..."`);
-                const reply = await sofia.processMessage(from, consolidatedText);
-
-                // Mantém o "digitando..." por 3 segundos
-                await new Promise(resolve => setTimeout(resolve, 3000));
-                await sock.sendPresenceUpdate('paused', fromRaw);
-
-                if (reply) {
-                    try {
-                        const sent = await sock.sendMessage(fromRaw, { text: reply });
-                        console.log(`✅ Resposta enviada com sucesso para ${fromRaw}. Message ID: ${sent?.key?.id}`);
-                    } catch (errSend) {
-                        console.error(`❌ Erro ao enviar mensagem para ${fromRaw}:`, errSend);
-                    }
-                }
-            } else {
-                await sock.sendPresenceUpdate('paused', fromRaw);
-            }
-        } catch (error) {
-            console.error(`❌ Erro crítico ao processar buffer do usuário ${fromRaw}:`, error);
-        } finally {
-            // Remove o número do lock de processamento ativo
-            processing.delete(fromRaw);
-            
-            // Remove apenas as mensagens processadas do buffer
-            const buffer = messageBuffers.get(fromRaw);
-            if (buffer) {
-                buffer.texts = buffer.texts.slice(textsToProcess.length);
-                buffer.audioMessages = buffer.audioMessages.slice(audiosToProcess.length);
-                buffer.messageKeys = buffer.messageKeys.slice(keysToProcess.length);
-
-                // Se houver novas mensagens acumuladas no buffer, reagenda o processamento imediato/debounce
-                if (buffer.texts.length > 0 || buffer.audioMessages.length > 0) {
-                    console.log(`🔄 Há ${buffer.texts.length} novas mensagens acumuladas no buffer de ${fromRaw}. Reagendando...`);
-                    triggerBufferProcess(fromRaw);
-                } else {
-                    // Limpa o mapa se o buffer estiver totalmente vazio
-                    messageBuffers.delete(fromRaw);
-                }
-            }
-        }
-    }
-
-    sock.ev.on('messages.upsert', async ({ messages, type }) => {
-        // SEGURANÇA 1: Garante que apenas o socket ativo processe mensagens
-        if (sock !== activeSock) {
-            console.log("ℹ️ Evento messages.upsert ignorado: pertence a um socket inativo/antigo.");
-            return;
-        }
-
-        if (type === 'notify' || type === 'append') {
-            const nowSeconds = Math.floor(Date.now() / 1000);
-            for (const msg of messages) {
-                const selfJid = sock.user?.id?.split(':')[0] + '@s.whatsapp.net';
-                const isSelf = msg.key.remoteJid === selfJid;
-                const content = getMessageContent(msg);
-                const isTestMessage = content.text && content.text.includes('Oi, meu nome é Maria, perdi meu marido há 3 dias');
-
-                if ((!msg.key.fromMe || (isSelf && isTestMessage)) && msg.message) {
-                    console.log("DEBUG MSG KEY:", JSON.stringify(msg.key));
-                    let fromRaw = msg.key.remoteJid!;
-                    
-                    // Se o remoteJid for do tipo @lid, tenta usar o remoteJidAlt ou participantAlt
-                    if (fromRaw.endsWith('@lid')) {
-                        const altJid = (msg.key as any).remoteJidAlt || (msg.key as any).participantAlt;
-                        if (altJid) {
-                            console.log(`🔄 Convertendo LID ${fromRaw} para JID normal: ${altJid}`);
-                            fromRaw = altJid;
+                if (consolidatedText) {
+                    // Marca mensagens como lidas
+                    for (const key of keysToProcess) {
+                        try {
+                            await sock.readMessages([key]);
+                        } catch (errRead) {
+                            console.warn("Erro ao marcar mensagem como lida:", errRead);
                         }
                     }
-                    
-                    const from = fromRaw.replace(/\D/g, ''); // Limpa o ID e pega só os números
-                    
-                    // Se for um grupo ou status, ignora
-                    if (fromRaw.includes('@g.us') || fromRaw === 'status@broadcast') continue;
 
-                    // --- SEGURANÇA 3: Ignorar mensagens antigas/históricas no startup ou reconexão ---
-                    const msgTime = typeof msg.messageTimestamp === 'number' 
-                        ? msg.messageTimestamp 
-                        : (msg.messageTimestamp?.low || 0);
+                    console.log(`🧠 Lara processando entrada do buffer de ${from}: "${consolidatedText.substring(0, 100)}..."`);
+                    const reply = await sofia.processMessage(from, consolidatedText);
 
-                    if (msgTime < startupTime - 15 || nowSeconds - msgTime > 3600) {
-                        console.log(`ℹ️ Ignorando mensagem histórica/antiga de ${from} (enviada há ${nowSeconds - msgTime}s)`);
-                        continue;
+                    // Mantém o "digitando..." por 3 segundos
+                    await new Promise(resolve => setTimeout(resolve, 3000));
+                    await sock.sendPresenceUpdate('paused', fromRaw);
+
+                    if (reply) {
+                        try {
+                            const sent = await sock.sendMessage(fromRaw, { text: reply });
+                            console.log(`✅ Resposta enviada com sucesso para ${fromRaw}. Message ID: ${sent?.key?.id}`);
+                        } catch (errSend) {
+                            console.error(`❌ Erro ao enviar mensagem para ${fromRaw}:`, errSend);
+                        }
                     }
+                } else {
+                    await sock.sendPresenceUpdate('paused', fromRaw);
+                }
+            } catch (error) {
+                console.error(`❌ Erro crítico ao processar buffer do usuário ${fromRaw}:`, error);
+            } finally {
+                // Remove o número do lock de processamento ativo
+                processing.delete(fromRaw);
+                
+                // Remove apenas as mensagens processadas do buffer
+                const buffer = messageBuffers.get(fromRaw);
+                if (buffer) {
+                    buffer.texts = buffer.texts.slice(textsToProcess.length);
+                    buffer.audioMessages = buffer.audioMessages.slice(audiosToProcess.length);
+                    buffer.messageKeys = buffer.messageKeys.slice(keysToProcess.length);
 
-                    // --- SEGURANÇA 4: Deduplicação de IDs de mensagens em memória ---
-                    if (msg.key.id && isMessageDuplicate(msg.key.id)) {
-                        console.log(`⚠️ Mensagem duplicada ignorada (ID: ${msg.key.id}) de ${from}`);
-                        continue;
-                    }
-
-                    // --- Forçar entrega imediata (DOIS RISQUINHOS CINZAS) no celular do cliente (sem await para evitar Yields) ---
-                    sock.sendReceipt(fromRaw, msg.key.participant || undefined, [msg.key.id!], 'delivery').catch(errReceipt => {
-                        console.warn("Erro ao enviar confirmação de entrega:", errReceipt);
-                    });
-                    
-                    // Inicializa o buffer para esse contato se não existir
-                    if (!messageBuffers.has(fromRaw)) {
-                        messageBuffers.set(fromRaw, { texts: [], audioMessages: [], timeout: null, messageKeys: [] });
-                    }
-
-                    const buffer = messageBuffers.get(fromRaw)!;
-                    buffer.messageKeys.push(msg.key);
-
-                    // Verifica e extrai o conteúdo da mensagem (texto ou áudio)
-                    const content = getMessageContent(msg);
-                    let hasContent = false;
-
-                    if (content.text) {
-                        buffer.texts.push(content.text);
-                        hasContent = true;
-                    } else if (content.isAudio) {
-                        console.log(`🎙️ Áudio recebido de ${from}. Adicionado ao buffer.`);
-                        buffer.audioMessages.push(msg);
-                        hasContent = true;
-                    }
-
-                    if (!hasContent) continue;
-
-                    // Mostra status de digitando... para o cliente (sem await para evitar Yields)
-                    sock.sendPresenceUpdate('composing', fromRaw).catch(errPresence => {
-                        console.warn("Erro ao enviar status de digitando:", errPresence);
-                    });
-
-                    // Só aciona o processamento do buffer se não estiver com processamento ativo.
-                    // Se estiver ativo, a mensagem permanece no buffer e será disparada no 'finally' do processBuffer
-                    if (!processing.has(fromRaw)) {
+                    // Se houver novas mensagens acumuladas no buffer, reagenda o processamento imediato/debounce
+                    if (buffer.texts.length > 0 || buffer.audioMessages.length > 0) {
+                        console.log(`🔄 Há ${buffer.texts.length} novas mensagens acumuladas no buffer de ${fromRaw}. Reagendando...`);
                         triggerBufferProcess(fromRaw);
                     } else {
-                        console.log(`⏳ Mensagem de ${from} acumulada no buffer (processamento ativo ocupado).`);
+                        // Limpa o mapa se o buffer estiver totalmente vazio
+                        messageBuffers.delete(fromRaw);
                     }
                 }
             }
         }
-    });
+
+        sock.ev.on('messages.upsert', async ({ messages, type }) => {
+            // SEGURANÇA 1: Garante que apenas o socket ativo processe mensagens
+            if (sock !== activeSock) {
+                console.log("ℹ️ Evento messages.upsert ignorado: pertence a um socket inativo/antigo.");
+                return;
+            }
+
+            if (type === 'notify' || type === 'append') {
+                const nowSeconds = Math.floor(Date.now() / 1000);
+                for (const msg of messages) {
+                    const selfJid = sock.user?.id?.split(':')[0] + '@s.whatsapp.net';
+                    const isSelf = msg.key.remoteJid === selfJid;
+                    const content = getMessageContent(msg);
+                    const isTestMessage = content.text && content.text.includes('Oi, meu nome é Maria, perdi meu marido há 3 dias');
+
+                    if ((!msg.key.fromMe || (isSelf && isTestMessage)) && msg.message) {
+                        console.log("DEBUG MSG KEY:", JSON.stringify(msg.key));
+                        let fromRaw = msg.key.remoteJid!;
+                        
+                        // Se o remoteJid for do tipo @lid, tenta usar o remoteJidAlt ou participantAlt
+                        if (fromRaw.endsWith('@lid')) {
+                            const altJid = (msg.key as any).remoteJidAlt || (msg.key as any).participantAlt;
+                            if (altJid) {
+                                console.log(`🔄 Convertendo LID ${fromRaw} para JID normal: ${altJid}`);
+                                fromRaw = altJid;
+                            }
+                        }
+                        
+                        const from = fromRaw.replace(/\D/g, ''); // Limpa o ID e pega só os números
+                        
+                        // Se for um grupo ou status, ignora
+                        if (fromRaw.includes('@g.us') || fromRaw === 'status@broadcast') continue;
+
+                        // --- SEGURANÇA 3: Ignorar mensagens antigas/históricas no startup ou reconexão ---
+                        const msgTime = typeof msg.messageTimestamp === 'number' 
+                            ? msg.messageTimestamp 
+                            : (msg.messageTimestamp?.low || 0);
+
+                        if (msgTime < startupTime - 15 || nowSeconds - msgTime > 3600) {
+                            console.log(`ℹ️ Ignorando mensagem histórica/antiga de ${from} (enviada há ${nowSeconds - msgTime}s)`);
+                            continue;
+                        }
+
+                        // --- SEGURANÇA 4: Deduplicação de IDs de mensagens em memória ---
+                        if (msg.key.id && isMessageDuplicate(msg.key.id)) {
+                            console.log(`⚠️ Mensagem duplicada ignorada (ID: ${msg.key.id}) de ${from}`);
+                            continue;
+                        }
+
+                        // --- Forçar entrega imediata (DOIS RISQUINHOS CINZAS) no celular do cliente (sem await para evitar Yields) ---
+                        sock.sendReceipt(fromRaw, msg.key.participant || undefined, [msg.key.id!], 'delivery').catch(errReceipt => {
+                            console.warn("Erro ao enviar confirmação de entrega:", errReceipt);
+                        });
+                        
+                        // Inicializa o buffer para esse contato se não existir
+                        if (!messageBuffers.has(fromRaw)) {
+                            messageBuffers.set(fromRaw, { texts: [], audioMessages: [], timeout: null, messageKeys: [] });
+                        }
+
+                        const buffer = messageBuffers.get(fromRaw)!;
+                        buffer.messageKeys.push(msg.key);
+
+                        // Verifica e extrai o conteúdo da mensagem (texto ou áudio)
+                        const content = getMessageContent(msg);
+                        let hasContent = false;
+
+                        if (content.text) {
+                            buffer.texts.push(content.text);
+                            hasContent = true;
+                        } else if (content.isAudio) {
+                            console.log(`🎙️ Áudio recebido de ${from}. Adicionado ao buffer.`);
+                            buffer.audioMessages.push(msg);
+                            hasContent = true;
+                        }
+
+                        if (!hasContent) continue;
+
+                        // Mostra status de digitando... para o cliente (sem await para evitar Yields)
+                        sock.sendPresenceUpdate('composing', fromRaw).catch(errPresence => {
+                            console.warn("Erro ao enviar status de digitando:", errPresence);
+                        });
+
+                        // Só aciona o processamento do buffer se não estiver com processamento ativo.
+                        // Se estiver ativo, a mensagem permanece no buffer e será disparada no 'finally' do processBuffer
+                        if (!processing.has(fromRaw)) {
+                            triggerBufferProcess(fromRaw);
+                        } else {
+                            console.log(`⏳ Mensagem de ${from} acumulada no buffer (processamento ativo ocupado).`);
+                        }
+                    }
+                }
+            }
+        });
+    } catch (err) {
+        console.error('❌ Erro crítico ao conectar ao WhatsApp:', err);
+    } finally {
+        isConnecting = false;
+    }
 }
 
 function getGreetingBrazil(): string {
