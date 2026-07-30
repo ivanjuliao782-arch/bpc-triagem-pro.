@@ -35,7 +35,7 @@ import { motion, AnimatePresence } from 'motion/react';
 type Score = 'Alto' | 'Médio' | 'Baixo';
 type ScoreClassification = 'Frio' | 'Morno' | 'Quente' | 'Prioridade Máxima';
 type Status = 'novo_lead' | 'em_atendimento' | 'follow_up' | 'consulta_marcada' | 'fechados' | 'perdidos' | 'com_advogado';
-type SidebarTab = 'dashboard' | 'leads' | 'atendimento' | 'follow_up' | 'agenda' | 'operadores' | 'relatorios' | 'configuracoes';
+type SidebarTab = 'dashboard' | 'leads' | 'atendimento' | 'follow_up' | 'agenda' | 'operadores' | 'relatorios' | 'configuracoes' | 'conversoes' | 'leads_hoje';
 
 interface Lead {
   id: string;
@@ -95,6 +95,7 @@ interface Lead {
 const MOCK_LEADS: Lead[] = [];
 
 export default function App() {
+  const [atendimentoFilter, setAtendimentoFilter] = useState<'todos' | 'novo_lead' | 'em_atendimento'>('todos');
   const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<SidebarTab>('leads');
@@ -662,7 +663,7 @@ export default function App() {
                   trend="+12%" 
                   icon={<Users size={16} />} 
                   color="text-indigo-400" 
-                  onClick={() => setActiveTab('leads')}
+                  onClick={() => setActiveTab('leads_hoje')}
                 />
                 <KPICard 
                   label="Aguardando" 
@@ -670,7 +671,7 @@ export default function App() {
                   trend="Fila" 
                   icon={<AlertTriangle size={16} />} 
                   color="text-yellow-400" 
-                  onClick={() => setActiveTab('atendimento')}
+                  onClick={() => { setActiveTab('atendimento'); setAtendimentoFilter('novo_lead'); }}
                 />
                 <KPICard 
                   label="Em Atendimento" 
@@ -678,7 +679,7 @@ export default function App() {
                   trend="Ativos" 
                   icon={<UserCheck size={16} />} 
                   color="text-sky-400" 
-                  onClick={() => setActiveTab('atendimento')}
+                  onClick={() => { setActiveTab('atendimento'); setAtendimentoFilter('em_atendimento'); }}
                 />
                 <KPICard 
                   label="Follow-up Pendente" 
@@ -694,7 +695,7 @@ export default function App() {
                   trend="Fechados"
                   icon={<CheckCircle2 size={16} />}
                   color="text-emerald-400"
-                  onClick={() => setActiveTab('relatorios')}
+                  onClick={() => setActiveTab('conversoes')}
                 />
                 <KPICard 
                   label="SLA Médio" 
@@ -1056,9 +1057,33 @@ export default function App() {
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 h-[calc(100vh-240px)]">
               {/* Lista de Leads Ativos (1/3) */}
               <div className="bg-[#0D0D12] border border-[#1C1C24] rounded-2xl p-6 flex flex-col h-full overflow-hidden">
-                <h3 className="text-sm font-bold text-white uppercase tracking-wider mb-4">Fila de Atendimento</h3>
+                <h3 className="text-sm font-bold text-white uppercase tracking-wider mb-2">Fila de Atendimento</h3>
+                <div className="flex gap-1.5 mb-4 select-none">
+                  <button 
+                    onClick={() => setAtendimentoFilter('todos')} 
+                    className={`flex-1 py-1.5 rounded-lg text-[10px] font-bold transition-all cursor-pointer ${atendimentoFilter === 'todos' ? 'bg-violet-600 text-white border border-violet-500' : 'bg-gray-900 text-gray-400 border border-gray-800 hover:text-gray-300'}`}
+                  >
+                    Todos
+                  </button>
+                  <button 
+                    onClick={() => setAtendimentoFilter('novo_lead')} 
+                    className={`flex-1 py-1.5 rounded-lg text-[10px] font-bold transition-all cursor-pointer ${atendimentoFilter === 'novo_lead' ? 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30' : 'bg-gray-900 text-gray-400 border border-gray-800 hover:text-gray-300'}`}
+                  >
+                    🤖 Fila (Aguardando)
+                  </button>
+                  <button 
+                    onClick={() => setAtendimentoFilter('em_atendimento')} 
+                    className={`flex-1 py-1.5 rounded-lg text-[10px] font-bold transition-all cursor-pointer ${atendimentoFilter === 'em_atendimento' ? 'bg-sky-500/20 text-sky-400 border border-sky-500/30' : 'bg-gray-900 text-gray-400 border border-gray-800 hover:text-gray-300'}`}
+                  >
+                    👤 Ativos
+                  </button>
+                </div>
                 <div className="flex-1 overflow-y-auto space-y-3 custom-scrollbar pr-1">
-                  {leads.filter(l => l.status === 'novo_lead' || l.status === 'em_atendimento').map(lead => (
+                  {leads.filter(l => {
+                      if (atendimentoFilter === 'novo_lead') return l.status === 'novo_lead';
+                      if (atendimentoFilter === 'em_atendimento') return l.status === 'em_atendimento';
+                      return l.status === 'novo_lead' || l.status === 'em_atendimento';
+                    }).map(lead => (
                     <div 
                       key={lead.id}
                       onClick={() => setSelectedLead(lead)}
@@ -1084,7 +1109,11 @@ export default function App() {
                       </div>
                     </div>
                   ))}
-                  {leads.filter(l => l.status === 'novo_lead' || l.status === 'em_atendimento').length === 0 && (
+                  {leads.filter(l => {
+                    if (atendimentoFilter === 'novo_lead') return l.status === 'novo_lead';
+                    if (atendimentoFilter === 'em_atendimento') return l.status === 'em_atendimento';
+                    return l.status === 'novo_lead' || l.status === 'em_atendimento';
+                  }).length === 0 && (
                     <p className="text-xs text-gray-600 italic text-center py-8">Nenhum lead ativo no momento.</p>
                   )}
                 </div>
@@ -1351,7 +1380,99 @@ export default function App() {
             </div>
           )}
 
-        </main>
+        
+          {/* TAB 8: CONVERSÕES (FECHADOS) */}
+          {activeTab === 'conversoes' && (
+            <div className="bg-[#0D0D12] border border-[#1C1C24] p-6 rounded-2xl space-y-6">
+              <div>
+                <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                  <span className="text-xl">🏆</span> Leads Convertidos com Sucesso
+                </h3>
+                <p className="text-xs text-gray-500">Histórico de contratos fechados e encaminhados pela equipe</p>
+              </div>
+
+              <div className="space-y-4">
+                {leads.filter(l => l.status === 'fechados').map(lead => (
+                  <div key={lead.id} className="p-4 bg-[#12121A] border border-[#1C1C28] rounded-xl flex flex-col md:flex-row justify-between items-start md:items-center gap-4 hover:border-gray-800 transition-all">
+                    <div>
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="font-bold text-sm text-white">{lead.nome}</span>
+                        <span className="px-2 py-0.5 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[9px] rounded-full font-bold">Convertido</span>
+                      </div>
+                      <p className="text-xs text-indigo-300 font-semibold mb-1">Benefício: {lead.tempo_contribuicao} • Valor: R$ {lead.valorContrato || '4.200,00'}</p>
+                      <p className="text-[10px] text-gray-500">Responsável: {lead.operador || 'Sem operador'} • Telefone: {lead.phone}</p>
+                    </div>
+
+                    <div className="flex gap-2 w-full md:w-auto">
+                      <button 
+                        onClick={() => handleWhatsAppClick(lead)}
+                        className="flex-1 md:flex-none px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                      >
+                        <MessageCircle size={14} /> Falar no WhatsApp
+                      </button>
+                    </div>
+                  </div>
+                ))}
+                {leads.filter(l => l.status === 'fechados').length === 0 && (
+                  <div className="py-12 text-center text-gray-600 italic text-xs">
+                    Nenhum lead convertido até o momento.
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* TAB 9: LEADS HOJE */}
+          {activeTab === 'leads_hoje' && (
+            <div className="bg-[#0D0D12] border border-[#1C1C24] p-6 rounded-2xl space-y-6">
+              <div>
+                <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                  <span className="text-xl">📅</span> Leads Recebidos Hoje
+                </h3>
+                <p className="text-xs text-gray-500">Todos os contatos que iniciaram a triagem nas últimas 24 horas</p>
+              </div>
+
+              <div className="space-y-4">
+                {leads.filter(l => {
+                  const d = new Date(l.horario_entrada);
+                  const today = new Date();
+                  return d.getDate() === today.getDate() && d.getMonth() === today.getMonth() && d.getFullYear() === today.getFullYear();
+                }).map(lead => (
+                  <div key={lead.id} className="p-4 bg-[#12121A] border border-[#1C1C28] rounded-xl flex flex-col md:flex-row justify-between items-start md:items-center gap-4 hover:border-gray-800 transition-all">
+                    <div>
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="font-bold text-sm text-white">{lead.nome}</span>
+                        <span className={`px-2 py-0.5 text-[9px] rounded-full font-bold border ${getScoreBadgeStyle(lead.scoreClass)}`}>
+                          {lead.scoreClass} ({lead.scoreValue} pts)
+                        </span>
+                      </div>
+                      <p className="text-xs text-indigo-300 font-semibold mb-1">Status: {lead.status?.replace('_', ' ') || 'Novo lead'}</p>
+                      <p className="text-[10px] text-gray-500">Telefone: {lead.phone} • Entrada: {new Date(lead.horario_entrada).toLocaleString('pt-BR')}</p>
+                    </div>
+
+                    <div className="flex gap-2 w-full md:w-auto">
+                      <button 
+                        onClick={() => handleWhatsAppClick(lead)}
+                        className="flex-1 md:flex-none px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                      >
+                        <MessageCircle size={14} /> Falar no WhatsApp
+                      </button>
+                    </div>
+                  </div>
+                ))}
+                {leads.filter(l => {
+                  const d = new Date(l.horario_entrada);
+                  const today = new Date();
+                  return d.getDate() === today.getDate() && d.getMonth() === today.getMonth() && d.getFullYear() === today.getFullYear();
+                }).length === 0 && (
+                  <div className="py-12 text-center text-gray-600 italic text-xs">
+                    Nenhum lead recebido hoje até o momento.
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+  </main>
       </div>
 
       {/* 3. PÁGINA INTERNA DO LEAD (GAVETA / DRAWER LATERAL) */}
