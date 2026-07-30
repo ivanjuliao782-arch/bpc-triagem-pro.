@@ -707,7 +707,7 @@ export default function App() {
               </section>
 
               {/* KANBAN BOARD */}
-              <section className="flex-1 flex gap-4 overflow-x-auto pb-4 custom-scrollbar-horizontal select-none min-h-0">
+              <section className="flex-1 flex flex-col md:flex-row gap-4 md:overflow-x-auto pb-4 custom-scrollbar-horizontal select-none min-h-0">
                 
                 {/* COLUNA 1 — NOVOS LEADS */}
                 <KanbanColumn title="🔴 1. NOVOS LEADS" count={leads.filter(l => l.status === 'novo_lead').length}>
@@ -1720,15 +1720,15 @@ function KPICard({ label, value, trend, icon, color, onClick }: { label: string;
 
 function KanbanColumn({ title, count, children }: { title: string; count: number; children: React.ReactNode }) {
   return (
-    <div className="w-80 shrink-0 flex flex-col h-[500px] md:h-full min-h-0">
+    <div className="w-full md:w-80 shrink-0 flex flex-col h-auto md:h-full min-h-0">
       <div className="flex justify-between items-center mb-4 px-2 select-none">
         <h3 className="text-xs font-bold tracking-wider text-gray-400 uppercase">{title}</h3>
         <span className="w-5 h-5 bg-[#12121A] text-gray-400 flex items-center justify-center text-[10px] font-bold rounded-lg border border-gray-800">{count}</span>
       </div>
-      <div className="flex-1 bg-[#0A0A0F]/60 border border-[#1C1C24] rounded-2xl p-3 overflow-y-auto space-y-4 custom-scrollbar select-none">
+      <div className="md:flex-1 bg-[#0A0A0F]/60 border border-[#1C1C24] rounded-2xl p-3 md:overflow-y-auto space-y-4 custom-scrollbar select-none">
         {children}
         {count === 0 && (
-          <div className="h-full flex flex-col items-center justify-center text-center p-6 text-gray-600 text-xs italic">
+          <div className="py-8 md:h-full flex flex-col items-center justify-center text-center p-6 text-gray-600 text-xs italic">
             Nenhum lead nesta coluna.
           </div>
         )}
