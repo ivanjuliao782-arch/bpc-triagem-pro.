@@ -882,6 +882,11 @@ JSON de retorno:`;
           delete extractedData.idade;
         }
 
+        // Trava para evitar que beneficiario_terceiro já confirmado seja sobrescrito por null, exceto se for uma auto-correção explícita
+        if (session.user_data?.beneficiario_terceiro && extractedData.beneficiario_terceiro === null && !this.detectarAutoBeneficiario(text)) {
+          delete extractedData.beneficiario_terceiro;
+        }
+
         // Trava para evitar que doenças já registradas sejam sobrescritas por negações em turnos posteriores
         const oldDoenca = session.user_data?.doenca;
         if (oldDoenca && oldDoenca.toLowerCase() !== 'não' && oldDoenca.toLowerCase() !== 'nao' && oldDoenca.trim() !== '') {
@@ -2235,6 +2240,30 @@ Gere a resposta da Lara (retorne APENAS o texto reescrito da pergunta base, sem 
     let finalState = nextStateResolved.state;
     const finalFluxo = nextStateResolved.fluxo_ativo;
 
+    // --- CONTADOR DE REPETIÇÃO DE PERGUNTA ---
+    if (stateFsm === finalState && finalState !== 'FINISHED' && finalState !== 'AWAITING_NAME') {
+      const fieldCountKey = `tentativas_${finalState}`;
+      user_data[fieldCountKey] = (user_data[fieldCountKey] || 0) + 1;
+      console.log(`ℹ️ [REPETIÇÃO] Pergunta do estado ${finalState} repetida pela ${user_data[fieldCountKey]}ª vez.`);
+      
+      if (user_data[fieldCountKey] >= 2) {
+        console.log(`⚠️ Limite de 2 tentativas sem sucesso atingido para o estado ${finalState}. Forçando avanço do fluxo.`);
+        this.forceFieldFallback(finalState, user_data);
+        user_data[fieldCountKey] = null;
+        
+        // Re-calcula o próximo estado após forçar o campo
+        const forceResolved = this.resolveFSMState(user_data);
+        finalState = forceResolved.state;
+      }
+    } else {
+      // Se o estado mudou, limpa todos os contadores de tentativas
+      Object.keys(user_data).forEach(key => {
+        if (key.startsWith('tentativas_')) {
+          user_data[key] = null;
+        }
+      });
+    }
+
     const isClosingReply = /(entrar[aã]o?\s+em\s+contato|encaminhar\s+(suas\s+informações|seu\s+caso)|nossa\s+equipe\s+pode\s+te\s+ajudar)/i.test(finalReply);
     if (isClosingReply) {
       console.log(`[FSM FORCE FINISHED] Forçando estado FSM para FINISHED pois a resposta da IA é de encerramento.`);
@@ -2252,6 +2281,7 @@ Gere a resposta da Lara (retorne APENAS o texto reescrito da pergunta base, sem 
 
     try {
       const updates: any = {
+        ...user_data,
         history: newHistory,
         state_fsm: finalState,
         fluxo_ativo: finalFluxo,
@@ -2676,5 +2706,36 @@ Gere a resposta da Lara (retorne APENAS o texto reescrito da pergunta base, sem 
     if (s.includes('DISEASE') || s.includes('HOUSEHOLD') || s.includes('STATUS') || s.includes('EMPLOYMENT') || s.includes('SPECIAL') || s.includes('RURAL') || s.includes('PERIODS') || s.includes('HISTORY')) return 'benefit';
     if (s.includes('NAME') || s.includes('LAWYER')) return 'welcome';
     return null;
+  }
+
+  private forceFieldFallback(state: string, userData: any) {
+    const s = state.toUpperCase();
+    if (s === 'AWAITING_LAWYER') userData.has_lawyer = false;
+    else if (s === 'LAWYER_CHECK_ACTION') userData.lawyer_has_action = false;
+    else if (s === 'LAWYER_CHECK_CONTRACT') userData.lawyer_has_contract = false;
+    else if (s === 'LAWYER_CHECK_PROCURACAO') userData.lawyer_has_procuracao = false;
+    else if (s === 'AWAITING_AGE') userData.idade = "não informado";
+    else if (s === 'AWAITING_TOTAL_CONTRIBUTION') userData.inss_tempo_carteira = "não informado";
+    else if (s === 'AWAITING_DISEASE') {
+      userData.doenca = "Não";
+      userData.tem_doenca_ou_limitacao = false;
+    }
+    else if (s === 'AWAITING_DISABILITY') {
+      userData.deficiencia = "Não";
+      userData.tem_deficiencia = false;
+    }
+    else if (s === 'AWAITING_CURRENT_WORK') userData.trabalha_atualmente = false;
+    else if (s === 'AWAITING_CURRENT_CONTRIBUTION') userData.esta_contribuindo_atualmente = false;
+    else if (s === 'AWAITING_TIME_WITHOUT_CONTRIBUTION') userData.tempo_parou_contribuir = "não informado";
+    else if (s === 'INSS_AWAITING_EMPLOYMENT_TYPE') userData.inss_como_contribuiu = "não informado";
+    else if (s === 'INSS_AWAITING_LAST_CONTRIBUTION') userData.inss_ultima_contribuicao = "não informado";
+    else if (s === 'INSS_AWAITING_REPORTS') userData.inss_laudos_medicos = false;
+    else if (s === 'BPC_AWAITING_HOUSEHOLD') userData.bpc_pessoas_casa = "não informado";
+    else if (s === 'BPC_AWAITING_HOUSEHOLD_INCOME') userData.bpc_renda_familiar = "não informado";
+    else if (s === 'BPC_AWAITING_HOME_STATUS') userData.bpc_casa_alugada_propria = "não informado";
+    else if (s === 'BPC_AWAITING_CADUNICO') userData.bpc_cad_unico = false;
+    else if (s === 'RETIREMENT_AWAITING_WORK_HISTORY') userData.retirement_work_history = "não informado";
+    else if (s === 'RETIREMENT_AWAITING_SPECIAL_RURAL') userData.retirement_special_rural = "Não";
+    else if (s === 'RETIREMENT_AWAITING_OTHER_PERIODS') userData.retirement_other_periods = "Não";
   }
 }

@@ -47,21 +47,23 @@ interface UserBuffer {
     timeout: NodeJS.Timeout | null;
 }
 
+import { exec } from 'child_process';
+
 // Fila/Buffer global na memória do bot para debounce
 const messageBuffers = new Map<string, UserBuffer>();
 
 // Set global para travar o processamento ativo por número de telefone e ignorar concorrência
 const processing = new Set<string>();
 
-// Cache de IDs de mensagens processadas para evitar duplicidade em reconexões do Baileys
+// Deduplicação persistente no Supabase com fallback em memória
 const processedMessageIds = new Set<string>();
 const maxMessageIdCacheSize = 1000;
-function isMessageDuplicate(msgId: string): boolean {
+
+function isMessageDuplicateFallback(msgId: string): boolean {
     if (processedMessageIds.has(msgId)) {
         return true;
     }
     processedMessageIds.add(msgId);
-    // Remove o mais antigo se ultrapassar o limite
     if (processedMessageIds.size > maxMessageIdCacheSize) {
         const firstValue = processedMessageIds.values().next().value;
         if (firstValue !== undefined) {
@@ -70,6 +72,46 @@ function isMessageDuplicate(msgId: string): boolean {
     }
     return false;
 }
+
+async function isMessageDuplicate(msgId: string): Promise<boolean> {
+    try {
+        const { error } = await supabase
+            .from('processed_messages')
+            .insert([{ message_id: msgId }]);
+
+        if (error) {
+            // Código 23505 indica chave primária duplicada (mensagem já processada)
+            if (error.code === '23505') {
+                return true;
+            }
+            console.warn(`[DEDUPLICAÇÃO] Erro de banco (código ${error.code}). Usando fallback em memória:`, error.message);
+            return isMessageDuplicateFallback(msgId);
+        }
+        return false;
+    } catch (err: any) {
+        console.error('[DEDUPLICAÇÃO] Falha ao consultar Supabase. Usando fallback em memória:', err?.message || err);
+        return isMessageDuplicateFallback(msgId);
+    }
+}
+
+// Limpeza periódica de mensagens processadas com mais de 1 hora
+setInterval(async () => {
+    try {
+        const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+        const { error } = await supabase
+            .from('processed_messages')
+            .delete()
+            .lt('created_at', oneHourAgo);
+        if (error) {
+            console.warn('[DEDUPLICAÇÃO] Erro na limpeza automática de mensagens antigas:', error.message);
+        } else {
+            console.log('[DEDUPLICAÇÃO] Mensagens antigas com mais de 1 hora limpas com sucesso.');
+        }
+    } catch (err) {
+        console.error('[DEDUPLICAÇÃO] Falha na limpeza periódica:', err);
+    }
+}, 60 * 60 * 1000);
+
 
 // Função auxiliar para extrair o conteúdo real de mensagens, tratando mensagens temporárias (ephemeral) e visualização única
 function getMessageContent(msg: any) {
@@ -100,6 +142,49 @@ function getMessageContent(msg: any) {
     return { text, isAudio, audioMessage };
 }
 
+async function fetchLatestWhatsAppWebVersion(): Promise<[number, number, number]> {
+    try {
+        const res = await fetch('https://raw.githubusercontent.com/wppconnect-team/wa-version/main/versions.json');
+        if (!res.ok) throw new Error(`HTTP error ${res.status}`);
+        const data = await res.json() as any;
+        const versionStr = data.currentAlpha || (Array.isArray(data) ? data[0]?.version : null);
+        if (versionStr) {
+            const cleanStr = versionStr.replace(/-alpha$/, '');
+            const parts = cleanStr.split('.').map((p: string) => parseInt(p, 10));
+            if (parts.length === 3 && !parts.some(isNaN)) {
+                console.log(`🌍 Versão dinâmica do WhatsApp Web obtida: ${parts.join('.')}`);
+                return [parts[0], parts[1], parts[2]];
+            }
+        }
+    } catch (err: any) {
+        console.error('⚠️ Falha ao buscar versão dinâmica do WhatsApp Web, usando fallback seguro:', err.message);
+    }
+    // Fallback caso a API externa falhe
+    return [2, 3000, 1044015310]; 
+}
+
+function triggerConnectionDropAlert(statusCode: number | string) {
+    const timeStr = new Date().toLocaleTimeString('pt-BR');
+    console.error(`
+🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨
+🚨                                                          🚨
+🚨  ALERTA CRÍTICO: A CONEXÃO DA LARA CAIU!                  🚨
+🚨  CÓDIGO DE STATUS: ${statusCode}                                   🚨
+🚨  HORÁRIO: ${timeStr}                                       🚨
+🚨                                                          🚨
+🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨
+    `);
+
+    // Dispara uma notificação nativa do Windows (balão de alerta) de forma assíncrona
+    const psCommand = `powershell -Command "[void] [System.Reflection.Assembly]::LoadWithPartialName('System.Windows.Forms'); $objNotifyIcon = New-Object System.Windows.Forms.NotifyIcon; $objNotifyIcon.Icon = [System.Drawing.Icon]::ExtractAssociatedIcon('C:\\Windows\\System32\\shell32.dll'); $objNotifyIcon.BalloonTipIcon = 'Error'; $objNotifyIcon.BalloonTipText = 'A conexão com o WhatsApp caiu! Código: ${statusCode}'; $objNotifyIcon.BalloonTipTitle = 'Alerta Lara Desconectada'; $objNotifyIcon.Visible = $true; $objNotifyIcon.ShowBalloonTip(10000)"`;
+    
+    exec(psCommand, (err) => {
+        if (err) {
+            console.warn('[ALERTA OS] Falha ao disparar notificação nativa:', err.message);
+        }
+    });
+}
+
 async function connectToWhatsApp() {
     if (isConnecting) {
         console.log('⚠️ Tentativa de conexão ao WhatsApp já está em andamento. Ignorando chamada recursiva/duplicada.');
@@ -109,7 +194,7 @@ async function connectToWhatsApp() {
     
     try {
         const { state, saveCreds } = await useSupabaseAuthState('sofia_principal');
-        const { version } = await fetchLatestBaileysVersion();
+        const version = await fetchLatestWhatsAppWebVersion();
         const sofia = new SofiaEngine();
 
         // Fecha a conexão antiga se houver uma ativa para evitar acúmulo de listeners e sockets abertos
@@ -126,6 +211,7 @@ async function connectToWhatsApp() {
 
         const sock = makeWASocket({
             version,
+            browser: ['Windows', 'Chrome', '120.0.0.0'],
             auth: state,
             printQRInTerminal: true,
             logger: pino({ level: 'silent' })
@@ -146,7 +232,7 @@ async function connectToWhatsApp() {
 
             if (connection === 'close') {
                 const statusCode = (lastDisconnect?.error as Boom)?.output?.statusCode;
-                console.log(`🔌 Conexão fechada. Código: ${statusCode}`);
+                triggerConnectionDropAlert(statusCode || 'UNKNOWN');
                 
                 // Só reconecta se este socket ainda for o socket ativo
                 if (sock === activeSock) {
@@ -338,10 +424,13 @@ async function connectToWhatsApp() {
                             continue;
                         }
 
-                        // --- SEGURANÇA 4: Deduplicação de IDs de mensagens em memória ---
-                        if (msg.key.id && isMessageDuplicate(msg.key.id)) {
-                            console.log(`⚠️ Mensagem duplicada ignorada (ID: ${msg.key.id}) de ${from}`);
-                            continue;
+                        // --- SEGURANÇA 4: Deduplicação de IDs de mensagens persistente no Supabase ---
+                        if (msg.key.id) {
+                            const isDup = await isMessageDuplicate(msg.key.id);
+                            if (isDup) {
+                                console.log(`⚠️ Mensagem duplicada ignorada (ID: ${msg.key.id}) de ${from}`);
+                                continue;
+                            }
                         }
 
                         // --- Forçar entrega imediata (DOIS RISQUINHOS CINZAS) no celular do cliente (sem await para evitar Yields) ---
