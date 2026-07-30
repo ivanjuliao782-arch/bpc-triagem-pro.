@@ -69,6 +69,7 @@ interface Lead {
   tem_docs_em_maos?: boolean;
   bpc_pessoas_casa?: number;
   bpc_parentesco?: string;
+  beneficiario_terceiro?: string;
   bpc_quem_renda?: string;
   bpc_casa_alugada_propria?: string;
   bpc_casa_equipada?: boolean;
@@ -224,7 +225,8 @@ export default function App() {
             agendamento: userData.agendamento || undefined,
             fluxo_ativo: userData.fluxo_ativo || undefined,
             bpc_pessoas_casa: userData.bpc_pessoas_casa || undefined,
-            bpc_parentesco: userData.bpc_parentesco || undefined,
+            bpc_parentesco: userData.bpc_parentesco || userData.beneficiario_terceiro || undefined,
+            beneficiario_terceiro: userData.beneficiario_terceiro || undefined,
             bpc_quem_renda: userData.bpc_quem_renda || undefined,
             bpc_casa_alugada_propria: userData.bpc_casa_alugada_propria || undefined,
             bpc_casa_equipada: userData.bpc_casa_equipada !== undefined ? userData.bpc_casa_equipada : undefined,
