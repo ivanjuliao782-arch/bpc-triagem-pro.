@@ -845,39 +845,39 @@ JSON de retorno:`;
     let history = user_data.history || [];
     let resolved = this.resolveFSMState(user_data);
 
-        // 1. Extração prévia de campos do texto antes de qualquer coisa (bloco consolidado)
+    // 1. Extração prévia de campos do texto antes de qualquer coisa (bloco consolidado)
     let extractedData: any = {};
-    if (session && session.user_data?.followup_sent) {
-      extractedData.followup_sent = false;
-      extractedData.followup_sent_at = null;
-    }
-
-    if (this.detectarAutoBeneficiario(text)) {
-      console.log(`[EXTRAÇÃO] Correção para auto-beneficiário detectada no texto: "${text}". Resetando beneficiario_terceiro.`);
-      extractedData.beneficiario_terceiro = null;
-      extractedData.beneficiario_ja_confirmado = true; // Trava para sempre
-    }
-
-    // Detecta beneficiário terceiro em qualquer mensagem, antes de tudo (código puro)
-    let beneficiarioTerceiro = session?.user_data?.beneficiario_terceiro || null;
-    if (extractedData.beneficiario_terceiro === null) {
-      beneficiarioTerceiro = null;
-    }
-
-    if (!isGreeting) {
-      const currentState = session ? (session.user_data?.state_fsm || undefined) : 'AWAITING_NAME';
-
-      console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 3. Conteúdo enviado ao extractor: "${text}" (currentState: "${currentState}")`);
-      if (isAudio) {
-        console.log(`[INSTRUMENTAÇÃO ÁUDIO] [${timestamp}] [Lead: ${phone}] 4. Resultado enviado ao extractor: "${text}"`);
+    if (session) {
+      if (session.user_data?.followup_sent) {
+        extractedData.followup_sent = false;
+        extractedData.followup_sent_at = null;
       }
-      const rawExtracted = await this.runHybridExtraction(text, currentState);
-      extractedData = {
-        ...extractedData,
-        ...rawExtracted
-      };
 
-      if (session) {
+      if (this.detectarAutoBeneficiario(text)) {
+        console.log(`[EXTRAÇÃO] Correção para auto-beneficiário detectada no texto: "${text}". Resetando beneficiario_terceiro.`);
+        extractedData.beneficiario_terceiro = null;
+        extractedData.beneficiario_ja_confirmado = true; // Trava para sempre
+      }
+
+      // Detecta beneficiário terceiro em qualquer mensagem, antes de tudo (código puro)
+      let beneficiarioTerceiro = session.user_data?.beneficiario_terceiro || null;
+      if (extractedData.beneficiario_terceiro === null) {
+        beneficiarioTerceiro = null;
+      }
+
+      if (!isGreeting) {
+        const currentState = session.user_data?.state_fsm || undefined;
+
+        console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 3. Conteúdo enviado ao extractor: "${text}" (currentState: "${currentState}")`);
+        if (isAudio) {
+          console.log(`[INSTRUMENTAÇÃO ÁUDIO] [${timestamp}] [Lead: ${phone}] 4. Resultado enviado ao extractor: "${text}"`);
+        }
+        const rawExtracted = await this.runHybridExtraction(text, currentState);
+        extractedData = {
+          ...extractedData,
+          ...rawExtracted
+        };
+
         if (session.user_data?.beneficiario_terceiro && session.user_data?.idade !== undefined && session.user_data?.idade !== null) {
           delete extractedData.idade;
         }
@@ -899,8 +899,15 @@ JSON de retorno:`;
           delete extractedData.deficiencia;
           delete extractedData.tem_deficiencia;
         }
-      }
-    }
+
+        // Trava para evitar que trabalha_atualmente já confirmado seja sobrescrito por respostas ambíguas
+        if (session.user_data?.trabalha_atualmente === true && extractedData.trabalha_atualmente === false) {
+          const cleanText = text.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+          const clearNegation = /\b(parei de trabalhar|nao trabalho mais|desempregad|fui demitid|perdi o emprego)\b/i.test(cleanText);
+          if (!clearNegation) {
+            delete extractedData.trabalha_atualmente;
+            delete extractedData.esta_contribuindo_atualmente;
+          }
         }
 
         if (currentState === 'AWAITING_CURRENT_CONTRIBUTION' && session.user_data?.reformulou_trabalho === true) {
@@ -1340,6 +1347,9 @@ JSON de retorno:`;
     }
 
     if (!session) {
+      // Executa a extração híbrida logo na primeira mensagem para capturar nome ou dados enviados de cara
+      extractedData = await this.runHybridExtraction(text, 'AWAITING_NAME');
+
       const hour = parseInt(new Date().toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', hour12: false }));
       let saudacao = "Boa noite";
       if (hour >= 6 && hour < 12) saudacao = "Bom dia";
