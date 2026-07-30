@@ -718,11 +718,11 @@ export default function App() {
                       <div 
                         key={lead.id} 
                         onClick={() => setSelectedLead(lead)}
-                        className="bg-[#12121A] border border-[#1C1C28] hover:border-violet-500/50 p-4 rounded-2xl shadow-xl transition-all hover:scale-[1.02] cursor-pointer group relative overflow-hidden"
+                        className="bg-[#12121A] border border-[#1C1C28] hover:border-violet-500/50 p-3 md:p-4 rounded-2xl shadow-xl transition-all hover:scale-[1.02] cursor-pointer group relative"
                       >
                         {/* Indicador de Prioridade Máxima (Quente) */}
                         {lead.scoreClass === 'Quente' && (
-                          <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-red-500 to-orange-500"></div>
+                          <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-red-500 to-orange-500 rounded-t-2xl"></div>
                         )}
 
                         <div className="flex justify-between items-start gap-2 mb-2">
@@ -791,7 +791,7 @@ export default function App() {
                     <div 
                       key={lead.id} 
                       onClick={() => setSelectedLead(lead)}
-                      className="bg-[#12121A] border border-[#1C1C28] p-4 rounded-2xl hover:border-indigo-500/30 transition-all hover:scale-[1.01] cursor-pointer space-y-3"
+                      className="bg-[#12121A] border border-[#1C1C28] p-3 md:p-4 rounded-2xl hover:border-indigo-500/30 transition-all hover:scale-[1.01] cursor-pointer space-y-3"
                     >
                       <div className="flex justify-between items-center">
                         <h4 className="text-sm font-bold text-white">{lead.nome}</h4>
@@ -824,7 +824,7 @@ export default function App() {
                     <div 
                       key={lead.id} 
                       onClick={() => setSelectedLead(lead)}
-                      className="bg-[#12121A] border border-[#1C1C28] p-4 rounded-2xl hover:border-orange-500/30 transition-all hover:scale-[1.01] cursor-pointer space-y-3"
+                      className="bg-[#12121A] border border-[#1C1C28] p-3 md:p-4 rounded-2xl hover:border-orange-500/30 transition-all hover:scale-[1.01] cursor-pointer space-y-3"
                     >
                       <div className="flex justify-between items-center">
                         <h4 className="text-sm font-bold text-white">{lead.nome}</h4>
@@ -861,7 +861,7 @@ export default function App() {
                     <div 
                       key={lead.id} 
                       onClick={() => setSelectedLead(lead)}
-                      className="bg-emerald-500/[0.02] border border-emerald-500/20 p-4 rounded-2xl hover:border-emerald-500/40 transition-all hover:scale-[1.01] cursor-pointer space-y-3"
+                      className="bg-emerald-500/[0.02] border border-emerald-500/20 p-3 md:p-4 rounded-2xl hover:border-emerald-500/40 transition-all hover:scale-[1.01] cursor-pointer space-y-3"
                     >
                       <h4 className="text-sm font-bold text-white">{lead.nome}</h4>
                       
@@ -884,7 +884,7 @@ export default function App() {
                     <div 
                       key={lead.id} 
                       onClick={() => setSelectedLead(lead)}
-                      className="bg-red-500/[0.01] border border-red-500/10 p-4 rounded-2xl hover:border-red-500/30 transition-all hover:scale-[1.01] cursor-pointer space-y-3"
+                      className="bg-red-500/[0.01] border border-red-500/10 p-3 md:p-4 rounded-2xl hover:border-red-500/30 transition-all hover:scale-[1.01] cursor-pointer space-y-3"
                     >
                       <h4 className="text-sm font-bold text-gray-400 line-through">{lead.nome}</h4>
                       
@@ -906,7 +906,7 @@ export default function App() {
                     <div
                       key={lead.id}
                       onClick={() => setSelectedLead(lead)}
-                      className="bg-red-950/20 border border-red-500/20 p-4 rounded-2xl hover:border-red-500/40 transition-all hover:scale-[1.01] cursor-pointer space-y-3"
+                      className="bg-red-950/20 border border-red-500/20 p-3 md:p-4 rounded-2xl hover:border-red-500/40 transition-all hover:scale-[1.01] cursor-pointer space-y-3"
                     >
                       <div className="flex justify-between items-center">
                         <h4 className="text-sm font-bold text-gray-400">{lead.nome}</h4>
