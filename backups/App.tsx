@@ -1,6 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { supabase } from './lib/supabase';
-import { calcularScorePrevidenciario } from './lib/score';
 import { 
   Users, 
   CheckCircle2, 
@@ -161,15 +160,171 @@ export default function App() {
           const hasDisease = userData.doenca && userData.doenca.toLowerCase() !== 'não';
 
           // --- CÁLCULO DE SCORE PREVIDENCIÁRIO AUTOMÁTICO ---
-          let scoreValue = calcularScorePrevidenciario(userData);
-          
-          if (userData.state_fsm === 'FINISHED' && userData.score_total !== undefined && userData.is_recoverable !== true) {
-            scoreValue = userData.score_total;
+          let scoreValue = userData.score_total !== undefined ? userData.score_total : 0;
+          if (userData.score_total === undefined) {
+            let tempScore = 0;
+            const parseAgeLocal = (v: any) => {
+              if (!v) return 0;
+              const match = String(v).match(/\d+/);
+              return match ? parseInt(match[0], 10) : 0;
+            };
+            const parseContribLocal = (v: any) => {
+              if (!v) return 0;
+              const match = String(v).match(/\d+/);
+              return match ? parseInt(match[0], 10) : 0;
+            };
+
+            const ageNumForDetect = parseAgeLocal(userData.idade || age);
+            const contribYearsForDetect = parseContribLocal(userData.tempo_contribuicao || contributionYears);
+            const hasDiseaseForDetect = userData.tem_doenca_ou_limitacao === true || hasDisease;
+
+            const historyForDetect = userData.history || [];
+            const hasAposeText = historyForDetect.some((h: any) => 
+              String(h.content || "").toLowerCase().includes("aposentar") || 
+              String(h.content || "").toLowerCase().includes("aposentadoria")
+            );
+
+            const isAposentadoria = 
+              userData.fluxo_ativo === 'APOSENTADORIA' ||
+              (
+                userData.fluxo_ativo !== 'BPC_IDOSO' &&
+                userData.fluxo_ativo !== 'BPC_DEFICIENTE' &&
+                userData.ja_contribuiu !== false &&
+                ((ageNumForDetect >= 55 || contribYearsForDetect >= 15) || hasAposeText) &&
+                !hasDiseaseForDetect
+              );
+            
+            if (isAposentadoria) {
+              // 1. Contribuição
+              const parseContrib = (v: any) => {
+                if (!v) return 0;
+                const match = String(v).match(/\d+/);
+                return match ? parseInt(match[0], 10) : 0;
+              };
+              const contribYears = parseContrib(userData.tempo_contribuicao || contributionYears);
+              if (contribYears >= 28) {
+                tempScore += 40;
+              } else if (contribYears >= 15 && contribYears <= 27) {
+                tempScore += 25;
+              }
+
+              // 2. Idade
+              const parseAge = (v: any) => {
+                if (!v) return 0;
+                const match = String(v).match(/\d+/);
+                return match ? parseInt(match[0], 10) : 0;
+              };
+              const ageNum = parseAge(userData.idade || age);
+              if (ageNum >= 60) {
+                tempScore += 20;
+              } else if (ageNum >= 55 && ageNum <= 59) {
+                tempScore += 15;
+              }
+
+              // 3. Sem advogado
+              if (userData.has_lawyer !== true) {
+                tempScore += 15;
+              }
+
+              // 4. Carteira assinada
+              const workHistory = String(
+                userData.retirement_work_history ||
+                userData.inss_como_contribuiu ||
+                ""
+              ).toLowerCase();
+              if (workHistory.includes('carteira') || workHistory.includes('assinado') || workHistory.includes('registro')) {
+                tempScore += 10;
+              }
+
+              // 5. Trabalho especial ou rural
+              const specialRural = String(userData.retirement_special_rural || "").toLowerCase();
+              const hasSpecial = (
+                specialRural.includes('especial') ||
+                specialRural.includes('insalubre') ||
+                specialRural.includes('perigo') ||
+                specialRural.includes('ruido') ||
+                specialRural.includes('quimico') ||
+                specialRural.includes('calor') ||
+                specialRural.includes('eletricidade')
+              );
+              const hasRural = (
+                specialRural.includes('rural') ||
+                specialRural.includes('roça') ||
+                specialRural.includes('campo') ||
+                specialRural.includes('lavoura') ||
+                specialRural.includes('colono')
+              );
+              if (hasSpecial || hasRural) {
+                tempScore += 20;
+              }
+
+              // 6. Documentos em mãos
+              const hasDocs = userData.tem_docs_em_maos === true;
+              if (hasDocs) {
+                tempScore += 10;
+              }
+            } else {
+              // 1. Idade >= 65 anos: +40 pts
+              const parseAge = (v: any) => {
+                if (!v) return 0;
+                const match = String(v).match(/\d+/);
+                return match ? parseInt(match[0], 10) : 0;
+              };
+              const ageNum = parseAge(userData.idade || age);
+              if (ageNum >= 65) tempScore += 40;
+
+              // 2. Nunca contribuiu: +20 pts
+              const neverContrib = userData.ja_contribuiu === false ||
+                                   String(userData.inss_tempo_carteira).toLowerCase() === 'nenhum' ||
+                                   String(userData.tempo_parou_contribuir).toLowerCase() === 'nunca' ||
+                                   String(userData.inss_ultima_contribuicao).toLowerCase().includes('não contribuiu');
+              if (neverContrib) tempScore += 20;
+
+              // 3. Renda per capita baixa: +20 pts
+              const rendaVal = String(userData.bpc_quem_renda || "").toLowerCase();
+              const isLowIncome = userData.has_no_income === true || 
+                                  userData.sem_renda === true ||
+                                  rendaVal.includes("nenhum") || 
+                                  rendaVal.includes("ninguem") || 
+                                  rendaVal.includes("sem renda") || 
+                                  rendaVal.includes("não tem") || 
+                                  rendaVal.includes("não possui") || 
+                                  (rendaVal.match(/\d+/) && parseInt((rendaVal.match(/\d+/) || ["0"])[0]) <= 706);
+              if (isLowIncome) tempScore += 20;
+
+              // 4. Mora sozinho/família baixa renda: +10 pts
+              const moraSozinhoOuBaixaRenda = String(userData.bpc_pessoas_casa).toLowerCase().includes("sozinh") ||
+                                              userData.bpc_pessoas_casa === 1 ||
+                                              userData.bpc_pessoas_casa === '1' ||
+                                              isLowIncome;
+              if (moraSozinhoOuBaixaRenda) tempScore += 10;
+
+              // 5. CadÚnico ativo: +10 pts
+              const cadUnicoAtivo = userData.bpc_cad_unico === true || userData.has_cad_unico === true;
+              if (cadUnicoAtivo) tempScore += 10;
+
+              // 6. Doença ou limitação grave: +15 pts
+              if (userData.tem_doenca_ou_limitacao === true) tempScore += 15;
+
+              // 7. Deficiência: +20 pts
+              if (userData.tem_deficiencia === true) tempScore += 20;
+
+              // 8. Acamado ou dependente: +25 pts
+              if (userData.is_bedridden === true) tempScore += 25;
+            }
+
+            scoreValue = Math.min(100, tempScore);
           }
 
           let scoreClass: ScoreClassification = 'Frio';
           if (scoreValue >= 70) scoreClass = 'Quente';
           else if (scoreValue >= 40) scoreClass = 'Morno';
+
+          // Se tem advogado e NÃO é recuperável: score zerado e coluna separada
+          if (userData.has_lawyer === true && userData.is_recoverable === false) {
+            scoreValue = 0;
+            scoreClass = 'Frio';
+          }
 
           // Determinar status do Kanban com base no status salvo (fonte única de verdade)
           let status: Status = 'novo_lead';
@@ -258,17 +413,7 @@ export default function App() {
           }
         });
 
-        // Garantia de deduplicação estrita por telefone
-        const uniqueLeads: Lead[] = [];
-        const seenPhones = new Set<string>();
-        combined.forEach(lead => {
-          if (lead.phone && !seenPhones.has(lead.phone)) {
-            seenPhones.add(lead.phone);
-            uniqueLeads.push(lead);
-          }
-        });
-
-        setLeads(uniqueLeads);
+        setLeads(combined);
       }
     } catch (err) {
       console.error('Erro ao buscar leads do Supabase:', err);
@@ -646,8 +791,8 @@ export default function App() {
         </header>
 
         {/* 2. CONTEÚDO PRINCIPAL (DASHBOARD) */}
-        <main className={`flex-1 min-h-0 p-4 md:p-8 custom-scrollbar ${
-          (activeTab === 'dashboard' || activeTab === 'leads') ? 'overflow-y-auto md:overflow-hidden flex flex-col' : 'overflow-y-auto'
+        <main className={`flex-1 min-h-0 p-8 custom-scrollbar ${
+          (activeTab === 'dashboard' || activeTab === 'leads') ? 'overflow-hidden flex flex-col' : 'overflow-y-auto'
         }`}>
           
           {/* TAB 1: KANBAN PRINCIPAL */}
@@ -718,11 +863,11 @@ export default function App() {
                       <div 
                         key={lead.id} 
                         onClick={() => setSelectedLead(lead)}
-                        className="bg-[#12121A] border border-[#1C1C28] hover:border-violet-500/50 p-3 md:p-4 rounded-2xl shadow-xl transition-all hover:scale-[1.02] cursor-pointer group relative"
+                        className="bg-[#12121A] border border-[#1C1C28] hover:border-violet-500/50 p-4 rounded-2xl shadow-xl transition-all hover:scale-[1.02] cursor-pointer group relative overflow-hidden"
                       >
                         {/* Indicador de Prioridade Máxima (Quente) */}
                         {lead.scoreClass === 'Quente' && (
-                          <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-red-500 to-orange-500 rounded-t-2xl"></div>
+                          <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-red-500 to-orange-500"></div>
                         )}
 
                         <div className="flex justify-between items-start gap-2 mb-2">
@@ -791,7 +936,7 @@ export default function App() {
                     <div 
                       key={lead.id} 
                       onClick={() => setSelectedLead(lead)}
-                      className="bg-[#12121A] border border-[#1C1C28] p-3 md:p-4 rounded-2xl hover:border-indigo-500/30 transition-all hover:scale-[1.01] cursor-pointer space-y-3"
+                      className="bg-[#12121A] border border-[#1C1C28] p-4 rounded-2xl hover:border-indigo-500/30 transition-all hover:scale-[1.01] cursor-pointer space-y-3"
                     >
                       <div className="flex justify-between items-center">
                         <h4 className="text-sm font-bold text-white">{lead.nome}</h4>
@@ -824,7 +969,7 @@ export default function App() {
                     <div 
                       key={lead.id} 
                       onClick={() => setSelectedLead(lead)}
-                      className="bg-[#12121A] border border-[#1C1C28] p-3 md:p-4 rounded-2xl hover:border-orange-500/30 transition-all hover:scale-[1.01] cursor-pointer space-y-3"
+                      className="bg-[#12121A] border border-[#1C1C28] p-4 rounded-2xl hover:border-orange-500/30 transition-all hover:scale-[1.01] cursor-pointer space-y-3"
                     >
                       <div className="flex justify-between items-center">
                         <h4 className="text-sm font-bold text-white">{lead.nome}</h4>
@@ -861,7 +1006,7 @@ export default function App() {
                     <div 
                       key={lead.id} 
                       onClick={() => setSelectedLead(lead)}
-                      className="bg-emerald-500/[0.02] border border-emerald-500/20 p-3 md:p-4 rounded-2xl hover:border-emerald-500/40 transition-all hover:scale-[1.01] cursor-pointer space-y-3"
+                      className="bg-emerald-500/[0.02] border border-emerald-500/20 p-4 rounded-2xl hover:border-emerald-500/40 transition-all hover:scale-[1.01] cursor-pointer space-y-3"
                     >
                       <h4 className="text-sm font-bold text-white">{lead.nome}</h4>
                       
@@ -884,7 +1029,7 @@ export default function App() {
                     <div 
                       key={lead.id} 
                       onClick={() => setSelectedLead(lead)}
-                      className="bg-red-500/[0.01] border border-red-500/10 p-3 md:p-4 rounded-2xl hover:border-red-500/30 transition-all hover:scale-[1.01] cursor-pointer space-y-3"
+                      className="bg-red-500/[0.01] border border-red-500/10 p-4 rounded-2xl hover:border-red-500/30 transition-all hover:scale-[1.01] cursor-pointer space-y-3"
                     >
                       <h4 className="text-sm font-bold text-gray-400 line-through">{lead.nome}</h4>
                       
@@ -906,7 +1051,7 @@ export default function App() {
                     <div
                       key={lead.id}
                       onClick={() => setSelectedLead(lead)}
-                      className="bg-red-950/20 border border-red-500/20 p-3 md:p-4 rounded-2xl hover:border-red-500/40 transition-all hover:scale-[1.01] cursor-pointer space-y-3"
+                      className="bg-red-950/20 border border-red-500/20 p-4 rounded-2xl hover:border-red-500/40 transition-all hover:scale-[1.01] cursor-pointer space-y-3"
                     >
                       <div className="flex justify-between items-center">
                         <h4 className="text-sm font-bold text-gray-400">{lead.nome}</h4>
@@ -1335,17 +1480,6 @@ export default function App() {
                       <div className="flex justify-between"><span>Acamado ou dependente:</span> <span className="text-indigo-400 font-bold">+25 pontos</span></div>
                     </div>
                   </div>
-
-                  <div className="space-y-2">
-                    <h4 className="text-sm font-bold text-white uppercase tracking-wider">Pesos do Score (INSS por Incapacidade)</h4>
-                    <div className="p-4 bg-gray-900/40 border border-gray-800/50 rounded-xl space-y-2 text-xs">
-                      <div className="flex justify-between"><span>Contribuindo atualmente (Segurado ativo):</span> <span className="text-indigo-400 font-bold">+30 pontos</span></div>
-                      <div className="flex justify-between"><span>Já contribuiu no passado (Qualidade de segurado):</span> <span className="text-indigo-400 font-bold">+15 pontos</span></div>
-                      <div className="flex justify-between"><span>Doença ou limitação grave relatada:</span> <span className="text-indigo-400 font-bold">+30 pontos</span></div>
-                      <div className="flex justify-between"><span>Possui laudos médicos:</span> <span className="text-indigo-400 font-bold">+20 pontos</span></div>
-                      <div className="flex justify-between"><span>Sem advogado constituído:</span> <span className="text-indigo-400 font-bold">+20 pontos</span></div>
-                    </div>
-                  </div>
                 </div>
               </div>
             </div>
@@ -1720,7 +1854,7 @@ function KPICard({ label, value, trend, icon, color, onClick }: { label: string;
 
 function KanbanColumn({ title, count, children }: { title: string; count: number; children: React.ReactNode }) {
   return (
-    <div className="w-80 shrink-0 flex flex-col h-[500px] md:h-full min-h-0">
+    <div className="w-80 shrink-0 flex flex-col h-full min-h-0">
       <div className="flex justify-between items-center mb-4 px-2 select-none">
         <h3 className="text-xs font-bold tracking-wider text-gray-400 uppercase">{title}</h3>
         <span className="w-5 h-5 bg-[#12121A] text-gray-400 flex items-center justify-center text-[10px] font-bold rounded-lg border border-gray-800">{count}</span>
