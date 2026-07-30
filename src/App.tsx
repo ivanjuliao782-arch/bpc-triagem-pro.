@@ -1566,7 +1566,14 @@ export default function App() {
                         Qualificação BPC/LOAS ({selectedLead.fluxo_ativo === 'BPC_IDOSO' ? 'Idoso' : 'Deficiente'})
                       </h3>
                       <div className="grid grid-cols-2 gap-4">
-                        <DetailBlock label="Moradores na Casa" value={selectedLead.bpc_pessoas_casa ? `${selectedLead.bpc_pessoas_casa} pessoa(s)` : 'Não informado'} />
+                        <DetailBlock 
+                          label="Moradores na Casa" 
+                          value={selectedLead.bpc_pessoas_casa 
+                            ? (String(selectedLead.bpc_pessoas_casa).toLowerCase().includes('pessoa') || isNaN(Number(selectedLead.bpc_pessoas_casa))
+                              ? String(selectedLead.bpc_pessoas_casa)
+                              : `${selectedLead.bpc_pessoas_casa} pessoa(s)`) 
+                            : 'Não informado'} 
+                        />
                         <DetailBlock label="Parentesco" value={selectedLead.bpc_parentesco || 'Não informado'} />
                         <DetailBlock label="Quem tem renda" value={selectedLead.bpc_quem_renda || 'Não informado'} />
                         <DetailBlock label="Situação Imóvel" value={selectedLead.bpc_casa_alugada_propria || 'Não informado'} />
