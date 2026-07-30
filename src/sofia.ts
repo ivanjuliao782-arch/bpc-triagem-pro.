@@ -882,8 +882,8 @@ JSON de retorno:`;
           delete extractedData.idade;
         }
 
-        // Trava para evitar que beneficiario_terceiro já confirmado seja sobrescrito por null, exceto se for uma auto-correção explícita
-        if (session.user_data?.beneficiario_terceiro && extractedData.beneficiario_terceiro === null && !this.detectarAutoBeneficiario(text)) {
+        // Trava para evitar que beneficiario_terceiro já confirmado seja sobrescrito ou alterado, exceto se for uma auto-correção explícita
+        if (session.user_data?.beneficiario_terceiro && extractedData.beneficiario_terceiro !== undefined && !this.detectarAutoBeneficiario(text)) {
           delete extractedData.beneficiario_terceiro;
         }
 
