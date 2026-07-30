@@ -415,8 +415,8 @@ export class SofiaEngine {
     }
 
     if (currentState === 'RETIREMENT_AWAITING_OTHER_PERIODS') {
-      const profissaoPrivada = /\b(domestica|domestico|porteir|garcom|garconete|vendedor|balconista|faxineir|diarista|cozinheir|cabeleireir|pedreiro|motorista)\b/i.test(cleanText);
-      if (profissaoPrivada && (mergedData.retirement_other_periods === undefined || mergedData.retirement_other_periods === null)) {
+      const temVinculoPublicoMilitarEspecial = /\b(servidor\s+publico|funcionari[oa]\s+public[oa]|concursad[oa]|militar|policia|policial|bombeir[oa]?|exercito|marinha|aeronautica|professor[as]?\s+(concursad[oa]|estadual|municipal|do\s+estado|do\s+municipio))\b/i.test(cleanText);
+      if (!temVinculoPublicoMilitarEspecial && (mergedData.retirement_other_periods === undefined || mergedData.retirement_other_periods === null)) {
         mergedData.retirement_other_periods = 'Não';
       }
     }
