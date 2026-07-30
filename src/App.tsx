@@ -670,7 +670,7 @@ export default function App() {
                   trend="Fila" 
                   icon={<AlertTriangle size={16} />} 
                   color="text-yellow-400" 
-                  onClick={() => setActiveTab('leads')}
+                  onClick={() => setActiveTab('atendimento')}
                 />
                 <KPICard 
                   label="Em Atendimento" 
@@ -689,12 +689,12 @@ export default function App() {
                   onClick={() => setActiveTab('follow_up')}
                 />
                 <KPICard 
-                  label="Conversões" 
-                  value={kpis.closed} 
-                  trend="Fechados" 
-                  icon={<CheckCircle2 size={16} />} 
-                  color="text-emerald-400" 
-                  onClick={() => setActiveTab('leads')}
+                  label="Conversões"
+                  value={kpis.closed}
+                  trend="Fechados"
+                  icon={<CheckCircle2 size={16} />}
+                  color="text-emerald-400"
+                  onClick={() => setActiveTab('relatorios')}
                 />
                 <KPICard 
                   label="SLA Médio" 
