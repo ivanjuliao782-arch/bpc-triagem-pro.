@@ -171,6 +171,7 @@ export class SofiaEngine {
       "chamo o", "chamo a", "chamo",
       "pode me chamar de", "pode chamar de",
       "aqui e o", "aqui e a", "aqui e",
+      "eu sou o", "eu sou a", "eu sou",
       "sou o", "sou a", "sou",
       "fala com o", "fala com a", "fala com"
     ];
@@ -186,6 +187,9 @@ export class SofiaEngine {
 
     // Limpa espaços extras
     clean = clean.replace(/\s+/g, " ").trim();
+    
+    // Remove "eu" isolado no início se ainda sobrar
+    clean = clean.replace(/^eu\b/gi, "").trim();
 
     // 5. Validação do nome restante
     if (clean.length === 0) return null;
@@ -473,7 +477,7 @@ export class SofiaEngine {
 
   detectarPerguntaEndereco(text: string): boolean {
     const cleanText = text.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-    return /\b(onde fica|onde e|onde voce e|voce e de onde|voces sao de onde|de onde voce e|de onde voces sao|de onde e a doutora|onde a doutora fica|onde fica a doutora|cade voces|onde vocês|endereco|localizacao|onde ficam|onde voces ficam|onde voces atendem|onde voce atende|qual endereco|onde fica o escritorio|onde fica seu escritorio|onde fica o consultorio|em que cidade voces ficam|em que cidade voce fica|qual cidade voces ficam|onde e o escritorio)\b/i.test(cleanText);
+    return /\b(onde fica|onde e|onde voce e|voce e de onde|voces sao de onde|de onde voce e|de onde voces sao|de onde e a doutora|onde a doutora fica|onde fica a doutora|cade voces|onde vocês|endereco|localizacao|onde ficam|onde voces ficam|onde voces atendem|onde voce atende|qual endereco|onde fica o escritorio|onde fica seu escritorio|onde fica o consultorio|em que cidade voces ficam|em que cidade voce fica|qual cidade voces ficam|onde e o escritorio|em qual cidade|qual cidade|de qual cidade|qual cidade e|qual cidade fica)\b/i.test(cleanText);
   }
 
   detectarPerguntaValor(text: string): boolean {
@@ -483,12 +487,19 @@ export class SofiaEngine {
 
   limparEcoPerguntas(text: string): string {
     let cleanText = text;
-    // 1. Remove saudações personalizadas comuns da Lara com quebra de linha ou espaço
-    cleanText = cleanText.replace(/Prazer,?\s+\w+!?,?\s*(?:Sinto muito que esteja passando por isso\.)?/gi, '');
+    // 1. Remove citações completas de mensagens da Lara que iniciam com saudações conhecidas até o "?"
+    cleanText = cleanText.replace(/\b(prazer,?\s+[^!?\n]+|me\s+chamo\s+lara|escritorio\s+da\s+dra|monica\s+lucioli)\b[^]*?\?\s*/gi, '');
+    
+    // 2. Remove saudações personalizadas comuns da Lara residuais
+    cleanText = cleanText.replace(/Prazer,?\s+[^!?\n]+!?,?\s*(?:Sinto muito (?:que esteja passando por isso|por toda essa dificuldade)\.?)?/gi, '');
     cleanText = cleanText.replace(/Me chamo Lara,?\s+atendente do escritório da Dra\.\s+Mônica Lucioli\./gi, '');
     cleanText = cleanText.replace(/Olá!?,?\s*(?:seja bem-vindo\(a\)|Tudo bem\?)?/gi, '');
     
-    // 2. Remove frases exatas de perguntas cadastradas na FSM
+    // Remove frases de empatia soltas que possam ter vazado
+    cleanText = cleanText.replace(/Sinto muito por toda essa dificuldade\./gi, '');
+    cleanText = cleanText.replace(/Sinto muito que esteja passando por isso\./gi, '');
+    
+    // 3. Remove frases exatas de perguntas cadastradas na FSM
     for (const questions of Object.values(STATE_QUESTIONS)) {
       for (const question of questions) {
         const escaped = question.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
@@ -686,28 +697,31 @@ JSON de retorno:`;
       }
     }
 
-    if (currentState === 'BPC_AWAITING_HOME_STATUS') {
+    // Extração Global de Moradia (BPC)
+    const mentionsHomeKeywords = /\b(casa|moro|moramos|resido|residimos|aluguel|alugad[oa]|propri[oa]|cedid[oa]|favor|rua)\b/i.test(clean);
+    if (mentionsHomeKeywords || currentState === 'BPC_AWAITING_HOME_STATUS') {
       const mentionsRua = /\b(moro|moramos|vivo|vivemos|somos)\b.{0,15}\b(na rua|nas ruas)\b|\brua\b.{0,15}\b(moro|moramos|mesmo)\b/i.test(clean) ||
                            /\b(debaixo da ponte|embaixo da ponte)\b/i.test(clean);
       const mentionsCedidaTerceiro = /\b(amigo|amiga|conhecido|conhecida|parente|vizinho|vizinha|cunhado|cunhada|sogro|sogra|avo|avó|tio|tia|irma|irmao)\b.{0,20}\b(emprest|cedeu|deu a casa|deixou ficar)/i.test(clean);
 
       if (mentionsRua) {
         data.bpc_casa_alugada_propria = 'situacao_de_rua';
-      } else if (clean.includes("aluga") || clean.includes("alugu")) {
+      } else if (/\b(alugad[oa]|aluguel|alugo)\b/i.test(clean)) {
         data.bpc_casa_alugada_propria = 'alugada';
-      } else if (clean.includes("propri") || clean.includes("minha")) {
+      } else if (/\b(casa\s+propria|casa\s+minha|propria|propri[oa])\b/i.test(clean)) {
         data.bpc_casa_alugada_propria = 'propria';
-      } else if (clean.includes("cedid") || clean.includes("emprest") || clean.includes("de favor") || mentionsCedidaTerceiro) {
+      } else if (/\b(cedid[oa]|de\s+favor|emprestad[oa])\b/i.test(clean) || mentionsCedidaTerceiro) {
         data.bpc_casa_alugada_propria = 'cedida';
       }
     }
 
-    // 5. CadÚnico (BPC_AWAITING_CADUNICO)
-    if (currentState === 'BPC_AWAITING_CADUNICO') {
-      if (/\b(nao|nao tenho|tenho nao|nunca fiz|sem cadastro)\b/.test(clean)) {
+    // Extração Global de CadÚnico (BPC)
+    const mentionsCadUnico = /\b(cad\s*unico|cadastro\s*unico|cadunico)\b/i.test(clean);
+    if (mentionsCadUnico || currentState === 'BPC_AWAITING_CADUNICO') {
+      if (/\b(nao|nao tenho|tenho nao|nunca fiz|sem cadastro|nao possuo)\b/i.test(clean)) {
         data.bpc_cad_unico = false;
         data.bpc_cadunico = false;
-      } else if (/\b(sim|tenho|ja fiz|cadastrada|cadastrado)\b/.test(clean)) {
+      } else if (/\b(sim|tenho|ja fiz|cadastrada|cadastrado|possuo)\b/i.test(clean)) {
         data.bpc_cad_unico = true;
         data.bpc_cadunico = true;
       }
@@ -885,6 +899,12 @@ JSON de retorno:`;
         // Trava para evitar que beneficiario_terceiro já confirmado seja sobrescrito ou alterado, exceto se for uma auto-correção explícita
         if (session.user_data?.beneficiario_terceiro && extractedData.beneficiario_terceiro !== undefined && !this.detectarAutoBeneficiario(text)) {
           delete extractedData.beneficiario_terceiro;
+        }
+
+        // Trava para evitar que sofrimento_relatado seja sobrescrito com null em turnos futuros
+        const oldSofrimento = session.user_data?.sofrimento_relatado;
+        if (oldSofrimento && oldSofrimento.trim() !== '' && (!extractedData.sofrimento_relatado || extractedData.sofrimento_relatado.trim() === '')) {
+          delete extractedData.sofrimento_relatado;
         }
 
         // Trava para evitar que doenças já registradas sejam sobrescritas por negações em turnos posteriores
