@@ -541,7 +541,7 @@ Campos a extrair:
 - inss_tempo_carteira: (string ou null) Tempo trabalhado de carteira assinada ou tempo de contribuição mencionado (ex: "15 anos").
 - bpc_pessoas_casa: (string ou null) Quantidade ou quem são as pessoas que moram com ele.
 - bpc_parentesco: (string ou null) Grau de parentesco das pessoas que moram com ele.
-- bpc_renda_familiar: (boolean ou null) Se o cliente ou alguém na casa dele possui renda, salário, pensão, benefício, aposentadoria ou faz bicos/trabalho informal (true se tiver alguma renda/receber dinheiro/fizer bicos/trabalho, false se disser que não recebe nada, não tem renda ou usar expressões como "quem me dera", e null se não for mencionado). ATENÇÃO: Ajuda financeira informal, doações ou mesadas de parentes/filhos que NÃO moram na mesma casa NÃO devem ser consideradas renda (retorne false ou null).
+- bpc_renda_familiar: (boolean ou null) Se o cliente ou alguém na casa dele possui renda, salário, pensão, benefício, aposentadoria ou faz bicos/trabalho informal (true se tiver alguma renda/receber dinheiro/fizer bicos/trabalho, false se disser que não recebe nada, não tem renda ou usar expressões como "quem me dera", e null se não for mencionado). ATENÇÃO: Ajuda financeira informal, doações ou mesadas de parentes/filhos que NÃO moram na mesma casa NÃO devem ser consideradas renda. Além disso, no BPC, parentes como genro, nora, netos, tios e primos NÃO fazem parte do grupo familiar legal. Se apenas o genro, nora, netos ou tios possuírem renda na casa, retorne false para bpc_renda_familiar (pois a renda do grupo familiar legal é zero).
 - bpc_quem_renda: (string ou null) Quem na casa tem renda e qual o valor. ATENÇÃO: Se a renda vier de ajuda de parentes/filhos que moram fora da casa, ignore e retorne null.
 - bpc_valor_renda_total: (number ou null) O valor numérico em reais da soma de TODA a renda mencionada (salário, aposentadoria, pensão, bolsa família, bico) de quem mora na casa. IMPORTANTE: NÃO inclua valores de despesas (aluguel, contas, gastos), idades, quantidade de pessoas, ou qualquer número que não seja especificamente renda recebida. Se não houver valor numérico claro de renda mencionado, retorne null.
 - bpc_casa_alugada_propria: (string ou null) Se a casa é alugada, própria, cedida, etc.
@@ -687,8 +687,11 @@ JSON de retorno:`;
       }
     }
 
-    // 3. Renda (BPC_AWAITING_HOUSEHOLD_INCOME)
-    if (currentState === 'BPC_AWAITING_HOUSEHOLD_INCOME') {
+    // 3. Renda (BPC_AWAITING_HOUSEHOLD_INCOME) - Extração Global com suporte a negação e elipse
+    const mentionsIncomeKeywords = /\b(renda|recebo|recebe|salario|trabalha|trabalham|bico|bicos|aposentador|pensao|ganha|ganham|ajuda financeira)\b/i.test(clean);
+    const mentionsGenroOrFamily = /\b(genro|nora|neto|neta|netos|netas|tio|tia|tios|tias|primo|prima|primos|primas|filha|filho|filhas|filhos|marido|esposo|esposa|mae|pai|irmao|irma|irmaos|irmas|companheiro|companheira|conjuge)\b/i.test(clean);
+
+    if (currentState === 'BPC_AWAITING_HOUSEHOLD_INCOME' || mentionsIncomeKeywords || mentionsGenroOrFamily) {
       if (
         /\b(nao|nada|nenhuma|nenhum|nunca|sem renda|quem me dera|nao recebo|recebo nao|infelizmente nao)\b/.test(clean) ||
         clean.includes("quem me dera") ||
@@ -697,8 +700,21 @@ JSON de retorno:`;
       ) {
         data.bpc_renda_familiar = false;
         data.bpc_quem_renda = 'nenhuma';
-      } else if (/\b(sim|recebo|recebe|recebem|receber|ganho|ganha|ganham|ganhar|trabalha|trabalham|trabalhar|bolsa|pensao|aposentadoria|aposentado|aposentada|pensionista|bpc|loas|ajuda|salario|renda|auxilio|bico|bicos)\b/.test(clean)) {
-        data.bpc_renda_familiar = true;
+      } else {
+        // Remove membros do grupo familiar que foram negados (ex: "filha nao", "marido nao trabalha")
+        let cleanNormalized = clean
+          .replace(/\b(filha|filho|filhas|filhos|marido|esposo|esposa|mae|pai|irmao|irma|irmaos|irmas|companheiro|companheira|conjuge)\s+(nao|nunca|sem|desempregad[oa]s?|parou|parados?|trabalha\s+nao)\b/gi, '')
+          .replace(/\b(nao|nunca|sem|desempregad[oa]s?|parou|parados?)\s+(trabalha\s+)?(filha|filho|filhas|filhos|marido|esposo|esposa|mae|pai|irmao|irma|irmaos|irmas|companheiro|companheira|conjuge)\b/gi, '');
+
+        const mentionsGenroNoraNeto = /\b(genro|nora|neto|neta|netos|netas|tio|tia|tios|tias|primo|prima|primos|primas)\b/i.test(cleanNormalized);
+        const mentionsFamilyGroup = /\b(eu|filho|filha|filhos|filhas|marido|esposo|esposa|mae|pai|irmao|irma|irmaos|irmas|companheiro|companheira|conjuge)\b/i.test(cleanNormalized);
+        
+        if (mentionsGenroNoraNeto && !mentionsFamilyGroup) {
+          data.bpc_renda_familiar = false;
+          data.bpc_quem_renda = 'nenhuma (apenas genro/nora/neto)';
+        } else if (mentionsFamilyGroup || /\b(sim|recebo|recebe|recebem|receber|ganho|ganha|ganham|ganhar|trabalha|trabalham|trabalhar|bolsa|pensao|aposentadoria|aposentado|aposentada|pensionista|bpc|loas|ajuda|salario|renda|auxilio|bico|bicos)\b/.test(clean)) {
+          data.bpc_renda_familiar = true;
+        }
       }
     }
 
@@ -946,6 +962,18 @@ JSON de retorno:`;
         // Trava para evitar que beneficiario_terceiro já confirmado seja sobrescrito ou alterado, exceto se for uma auto-correção explícita
         if (session.user_data?.beneficiario_terceiro && extractedData.beneficiario_terceiro !== undefined && !this.detectarAutoBeneficiario(text)) {
           delete extractedData.beneficiario_terceiro;
+        }
+
+        // Proteção contra sobrescrita ou criação tardia de beneficiário terceiro no meio do fluxo
+        if (currentState && currentState !== 'AWAITING_NAME' && currentState !== 'welcome') {
+          // Se já está estabelecido que é para o próprio cliente (beneficiario_terceiro está nulo no banco),
+          // não deixa a IA inventar um parente baseando-se em menções de renda ou moradia.
+          if (extractedData.beneficiario_terceiro !== undefined && !session.user_data?.beneficiario_terceiro) {
+            delete extractedData.beneficiario_terceiro;
+          }
+          if (extractedData.nome_usuario !== undefined && session.user_data?.nome_usuario) {
+            delete extractedData.nome_usuario;
+          }
         }
 
         // Trava para evitar que sofrimento_relatado seja sobrescrito com null em turnos futuros
@@ -1590,6 +1618,7 @@ JSON de retorno:`;
             { role: 'assistant', content: finalReply }
           ],
           state_fsm: 'AWAITING_NAME',
+          ultimo_sofrimento_com_empatia: extractedData.doenca || extractedData.sofrimento_relatado || 'inicial',
           ...extractedData
         };
         await this.supabase.rpc('save_session_data', {
@@ -2181,11 +2210,9 @@ JSON de retorno:`;
       const sofrimentoAtualParaComparacao = user_data.sofrimento_relatado || user_data.doenca || '';
       const ultimoComEmpatia = user_data.ultimo_sofrimento_com_empatia === undefined ? undefined : (user_data.ultimo_sofrimento_com_empatia || "");
 
-      const cleanSofrimento = sofrimentoAtualParaComparacao.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
-      const cleanUltimo = String(ultimoComEmpatia).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
-      const jaMostrouEmpatia = cleanUltimo !== "" && (cleanSofrimento.includes(cleanUltimo) || cleanUltimo.includes(cleanSofrimento));
+      const jaEnviouEmpatia = !!user_data.ultimo_sofrimento_com_empatia;
 
-      if ((temCorteOuProblema || temDesesperoFinanceiro) && (ultimoComEmpatia === undefined || !jaMostrouEmpatia)) {
+      if ((temCorteOuProblema || temDesesperoFinanceiro) && !jaEnviouEmpatia) {
         let empatia = "Sinto muito que esteja passando por isso.";
         if (temDesesperoFinanceiro) {
           empatia = "Sinto muito por toda essa dificuldade.";
@@ -2193,10 +2220,13 @@ JSON de retorno:`;
           empatia = `Que situação difícil, sinto muito pelo seu ${familiar}.`;
         }
         selectedQuestion = `${empatia} ${selectedQuestion}`;
-        user_data.ultimo_sofrimento_com_empatia = sofrimentoAtualParaComparacao;
+        user_data.ultimo_sofrimento_com_empatia = sofrimentoAtualParaComparacao || 'enviado';
       }
 
-      const reply = confirmPrefixToPrepend ? `${confirmPrefixToPrepend}${selectedQuestion}` : selectedQuestion;
+      let reply = confirmPrefixToPrepend ? `${confirmPrefixToPrepend}${selectedQuestion}` : selectedQuestion;
+      if (jaEnviouEmpatia) {
+        reply = reply.replace(/^\s*(?:Sinto muito (?:que esteja passando por isso|por toda essa dificuldade|que você esteja passando por essa dor)\.?\s*|Que situação difícil, sinto muito\.?\s*|Poxa, isso é muito pesado\.?\s*)+/gi, '');
+      }
       
       const newHistory = [...history, { role: 'user', content: text }, { role: 'assistant', content: reply }];
       const updates = {
@@ -2216,6 +2246,7 @@ JSON de retorno:`;
     }
 
     const promptSofia = `Você é Lara, atendente humana do escritório de advocacia previdenciária da Dra. Mônica Lucioli.
+Empatia/Acolhimento de dor ou doença já demonstrado nesta conversa: ${user_data.ultimo_sofrimento_com_empatia ? "SIM (É TERMINANTEMENTE PROIBIDO repetir ou iniciar sua resposta com frases de empatia como 'sinto muito', 'que situação difícil', 'poxa', etc. Vá direto à pergunta!)" : "NÃO"}
 Você realiza a triagem de clientes via WhatsApp. Seu tom de voz deve ser 100% IDÊNTICO ao estilo real do escritório: extremamente direto, seco, prático, objetivo e muito curto nas perguntas de cadastro, mas demonstrando sentimentos humanos reais e calorosos quando o cliente relata dor, doença grave ou luto (especialmente viúvas/viúvos).
 
 DIRETRIZES DE COMUNICAÇÃO E REGRAS DE NEGÓCIO (OBRIGATÓRIO):
@@ -2405,11 +2436,9 @@ Gere a resposta da Lara (retorne APENAS o texto reescrito da pergunta base, sem 
     const sofrimentoAtualParaComparacao = user_data.sofrimento_relatado || user_data.doenca || '';
     const ultimoComEmpatia = user_data.ultimo_sofrimento_com_empatia === undefined ? undefined : (user_data.ultimo_sofrimento_com_empatia || "");
 
-    const cleanSofrimento = sofrimentoAtualParaComparacao.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
-    const cleanUltimo = String(ultimoComEmpatia).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
-    const jaMostrouEmpatia = cleanUltimo !== "" && (cleanSofrimento.includes(cleanUltimo) || cleanUltimo.includes(cleanSofrimento));
+    const jaEnviouEmpatia = !!user_data.ultimo_sofrimento_com_empatia;
 
-    if ((temCorteOuProblema || temDesesperoFinanceiro) && (ultimoComEmpatia === undefined || !jaMostrouEmpatia)) {
+    if ((temCorteOuProblema || temDesesperoFinanceiro) && !jaEnviouEmpatia) {
       const familiar = user_data.beneficiario_terceiro;
       let empatia = "Sinto muito que esteja passando por isso.";
       
@@ -2430,7 +2459,11 @@ Gere a resposta da Lara (retorne APENAS o texto reescrito da pergunta base, sem 
           finalReply = `${empatia} ${finalReply}`;
         }
       }
-      user_data.ultimo_sofrimento_com_empatia = sofrimentoAtualParaComparacao;
+      user_data.ultimo_sofrimento_com_empatia = sofrimentoAtualParaComparacao || 'enviado';
+    }
+
+    if (jaEnviouEmpatia) {
+      finalReply = finalReply.replace(/^\s*(?:Sinto muito (?:que esteja passando por isso|por toda essa dificuldade|que você esteja passando por essa dor)\.?\s*|Que situação difícil, sinto muito\.?\s*|Poxa, isso é muito pesado\.?\s*)+/gi, '');
     }
 
     // Injeção de saudação calorosa ao transitar para a pergunta de advogado
@@ -2520,7 +2553,7 @@ Gere a resposta da Lara (retorne APENAS o texto reescrito da pergunta base, sem 
     }
 
     const isClosingReply = /(entrar[aã]o?\s+em\s+contato|encaminhar\s+(suas\s+informações|seu\s+caso)|nossa\s+equipe\s+pode\s+te\s+ajudar)/i.test(finalReply);
-    if (isClosingReply) {
+    if (isClosingReply && (finalState === 'FINISHED' || finalState === 'AWAITING_REPORTS' || finalState === 'INSS_AWAITING_REPORTS' || finalState === 'BPC_AWAITING_CADUNICO')) {
       console.log(`[FSM FORCE FINISHED] Forçando estado FSM para FINISHED pois a resposta da IA é de encerramento.`);
       finalState = 'FINISHED';
     }
