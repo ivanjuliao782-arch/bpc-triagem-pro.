@@ -345,6 +345,51 @@ async function runVerification() {
   } else {
     console.log('❌ FAILED (BPC Family Group counted the son-in-law as family income)');
   }
+
+  // --- TEST 10: SIMULADOR JUVENTINO (Prazo + Idade + Doença + Coluna na primeira msg) ---
+  console.log('\n--- TEST 10: SIMULADOR JUVENTINO ---');
+  const phoneJuventino = '5532888888888';
+  await supabase.from('sofia_sessions').delete().eq('phone', phoneJuventino);
+
+  // Turn 1: Lead sends message with deadline request, age (54), disease/column, and no name
+  const juvMsg1 = "Oi boa NOITE, é o seguinte, eu tô desesperado aqui porque o INSS indeferiu meu auxílio de novo, essa já é a segunda vez, eu tenho 54 anos, trabalhei minha vida inteira registrado, agora fiquei sem chão porque não sei o que fazer, minha esposa tá desempregada também, aí eu queria saber se vocês atendem esse tipo de caso e quanto tempo demora pra... deixa eu ver aqui... ah é, eu tenho o laudo do médico também, ele disse que eu não posso voltar a trabalhar tão cedo por causa da coluna, será que vocês conseguem me ajudar hoje ainda ou só semana que vem?";
+  console.log(`\nInput message 1 (Juv): "${juvMsg1}"`);
+  const juvReply1 = await engine.processMessage(phoneJuventino, juvMsg1);
+  console.log(`Lara Reply 1:\n"""\n${juvReply1}\n"""`);
+
+  // Turn 2: User answers name
+  const juvMsg2 = "Juventino";
+  console.log(`\nInput message 2 (Juv): "${juvMsg2}"`);
+  const juvReply2 = await engine.processMessage(phoneJuventino, juvMsg2);
+  console.log(`Lara Reply 2:\n"""\n${juvReply2}\n"""`);
+
+  // Turn 3: User answers lawyer check
+  const juvMsg3 = "ainda não";
+  console.log(`\nInput message 3 (Juv): "${juvMsg3}"`);
+  const juvReply3 = await engine.processMessage(phoneJuventino, juvMsg3);
+  console.log(`Lara Reply 3:\n"""\n${juvReply3}\n"""`);
+
+  // Check state and extracted age
+  const { data: dbDataJuv } = await supabase.from('sofia_sessions').select('user_data').eq('phone', phoneJuventino).single();
+  const dbAgeJuv = dbDataJuv?.user_data?.idade;
+  const dbDiseaseJuv = dbDataJuv?.user_data?.doenca;
+  const dbFsmStateJuv = dbDataJuv?.user_data?.state_fsm;
+
+  console.log(`DB idade: ${dbAgeJuv} (expected: 54)`);
+  console.log(`DB doenca: ${dbDiseaseJuv} (expected: "coluna" or similar)`);
+  console.log(`DB state_fsm: ${dbFsmStateJuv} (expected: not AWAITING_AGE)`);
+
+  if (dbAgeJuv === 54) {
+    console.log('✅ SUCCESS (Juventino age 54 was correctly extracted on first turn despite deadline interceptor!)');
+  } else {
+    console.log(`❌ FAILED (Juventino age was not extracted, got: ${dbAgeJuv})`);
+  }
+
+  if (dbFsmStateJuv !== 'AWAITING_AGE') {
+    console.log('✅ SUCCESS (FSM skipped AWAITING_AGE because age was already known!)');
+  } else {
+    console.log('❌ FAILED (FSM asked for age again even though it was provided!)');
+  }
 }
 
 runVerification().catch(console.error);
