@@ -815,6 +815,48 @@ JSON de retorno:`;
   }
 
 
+  private async interceptAndApplyThirdPartyConfirm(reply: string, session: any, phone: string): Promise<string> {
+    const user_data = session.user_data;
+    if (user_data && user_data.beneficiario_terceiro && !user_data.confirmou_beneficiario_enviado) {
+      const familiar = String(user_data.beneficiario_terceiro).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+      
+      const fem = ['filha', 'esposa', 'mae', 'neta', 'irma', 'avo', 'tia', 'sogra', 'sobrinha', 'nora', 'enteada', 'companheira'].includes(familiar);
+      const prep = fem ? 'da' : 'do';
+      const familiarArtigo = fem ? 'sua' : 'seu';
+      
+      const familiarCapitalized = user_data.beneficiario_terceiro.charAt(0).toUpperCase() + user_data.beneficiario_terceiro.slice(1);
+      const prefixoConfirmacao = `Entendi que se trata do benefício ${prep} ${familiarArtigo} ${familiarCapitalized}. `;
+      
+      let newReply = reply;
+      if (reply.includes("Pode me chamar de Lara.")) {
+        newReply = reply.replace("Pode me chamar de Lara.", `Pode me chamar de Lara. ${prefixoConfirmacao}`);
+      } else if (reply.includes("Dra. Mônica Lucioli. ")) {
+        newReply = reply.replace("Dra. Mônica Lucioli. ", `Dra. Mônica Lucioli. ${prefixoConfirmacao} `);
+      } else {
+        newReply = `${prefixoConfirmacao}${reply}`;
+      }
+
+      user_data.confirmou_beneficiario_enviado = true;
+      
+      await this.supabase.rpc('save_session_data', {
+        p_phone: phone,
+        p_step: null,
+        p_user_data_updates: {
+          confirmou_beneficiario_enviado: true,
+          history: user_data.history ? user_data.history.map((h: any, idx: number) => {
+            if (idx === user_data.history.length - 1 && h.role === 'assistant') {
+              return { ...h, content: newReply };
+            }
+            return h;
+          }) : []
+        }
+      });
+
+      return newReply;
+    }
+    return reply;
+  }
+
   async processMessage(phone: string, input: string | Buffer) {
     const isAudio = typeof input !== 'string';
     let text: string | null = null;
@@ -1098,6 +1140,12 @@ JSON de retorno:`;
           dryQuestion = `A casa ${prep} ${artLC} ${familiar} é própria, alugada ou cedida?`;
         } else if (stateFsm === 'BPC_AWAITING_CADUNICO') {
           dryQuestion = `${art} ${familiar} possui CadÚnico atualizado?`;
+        } else if (stateFsm === 'RETIREMENT_AWAITING_WORK_HISTORY') {
+          dryQuestion = `Qual o histórico de trabalho ${prep} ${artLC} ${familiar}?`;
+        } else if (stateFsm === 'RETIREMENT_AWAITING_SPECIAL_RURAL') {
+          dryQuestion = `${art} ${familiar} trabalhou em lavoura, roça ou atividade rural?`;
+        } else if (stateFsm === 'RETIREMENT_AWAITING_OTHER_PERIODS') {
+          dryQuestion = `${art} ${familiar} tem algum outro período de contribuição ou trabalho para somar?`;
         }
       }
 
@@ -1615,9 +1663,11 @@ JSON de retorno:`;
       }
 
       console.log(`🧠 Iniciando primeira interação do usuário. Processando com IA para saudação e apresentação...`);
-      return this.handleStepWithAI(newSessionData, text);
+      const res = await this.handleStepWithAI(newSessionData, text);
+      return this.interceptAndApplyThirdPartyConfirm(res, newSessionData, phone);
     } else {
-      return this.handleStepWithAI(session, text);
+      const res = await this.handleStepWithAI(session, text);
+      return this.interceptAndApplyThirdPartyConfirm(res, session, phone);
     }
   }
 
@@ -2131,7 +2181,11 @@ JSON de retorno:`;
       const sofrimentoAtualParaComparacao = user_data.sofrimento_relatado || user_data.doenca || '';
       const ultimoComEmpatia = user_data.ultimo_sofrimento_com_empatia === undefined ? undefined : (user_data.ultimo_sofrimento_com_empatia || "");
 
-      if ((temCorteOuProblema || temDesesperoFinanceiro) && (ultimoComEmpatia === undefined || sofrimentoAtualParaComparacao !== ultimoComEmpatia)) {
+      const cleanSofrimento = sofrimentoAtualParaComparacao.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+      const cleanUltimo = String(ultimoComEmpatia).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+      const jaMostrouEmpatia = cleanUltimo !== "" && (cleanSofrimento.includes(cleanUltimo) || cleanUltimo.includes(cleanSofrimento));
+
+      if ((temCorteOuProblema || temDesesperoFinanceiro) && (ultimoComEmpatia === undefined || !jaMostrouEmpatia)) {
         let empatia = "Sinto muito que esteja passando por isso.";
         if (temDesesperoFinanceiro) {
           empatia = "Sinto muito por toda essa dificuldade.";
@@ -2351,7 +2405,11 @@ Gere a resposta da Lara (retorne APENAS o texto reescrito da pergunta base, sem 
     const sofrimentoAtualParaComparacao = user_data.sofrimento_relatado || user_data.doenca || '';
     const ultimoComEmpatia = user_data.ultimo_sofrimento_com_empatia === undefined ? undefined : (user_data.ultimo_sofrimento_com_empatia || "");
 
-    if ((temCorteOuProblema || temDesesperoFinanceiro) && (ultimoComEmpatia === undefined || sofrimentoAtualParaComparacao !== ultimoComEmpatia)) {
+    const cleanSofrimento = sofrimentoAtualParaComparacao.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+    const cleanUltimo = String(ultimoComEmpatia).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+    const jaMostrouEmpatia = cleanUltimo !== "" && (cleanSofrimento.includes(cleanUltimo) || cleanUltimo.includes(cleanSofrimento));
+
+    if ((temCorteOuProblema || temDesesperoFinanceiro) && (ultimoComEmpatia === undefined || !jaMostrouEmpatia)) {
       const familiar = user_data.beneficiario_terceiro;
       let empatia = "Sinto muito que esteja passando por isso.";
       
@@ -2588,6 +2646,31 @@ Gere a resposta da Lara (retorne APENAS o texto reescrito da pergunta base, sem 
     }
 
     // --- AUTO-INFERÊNCIAS ---
+    // Plano de escape: auto-inferência se o campo booleano for nulo, mas houver descrição no campo de texto
+    if (userData.tem_deficiencia === null || userData.tem_deficiencia === undefined) {
+      if (userData.deficiencia) {
+        const defClean = String(userData.deficiencia).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+        const ehNegacao = defClean === 'nao' || defClean === 'nenhuma' || defClean.includes('nao tenho') || defClean === 'gracas a deus nao';
+        if (ehNegacao) {
+          userData.tem_deficiencia = false;
+        } else if (defClean !== '' && defClean !== 'null' && defClean !== 'undefined') {
+          userData.tem_deficiencia = true;
+        }
+      }
+    }
+
+    if (userData.tem_doenca_ou_limitacao === null || userData.tem_doenca_ou_limitacao === undefined) {
+      if (userData.doenca) {
+        const doencaClean = String(userData.doenca).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+        const ehNegacao = doencaClean === 'nao' || doencaClean === 'nenhuma' || doencaClean.includes('nao tenho');
+        if (ehNegacao) {
+          userData.tem_doenca_ou_limitacao = false;
+        } else if (doencaClean !== '' && doencaClean !== 'null' && doencaClean !== 'undefined') {
+          userData.tem_doenca_ou_limitacao = true;
+        }
+      }
+    }
+
     let ageNum = this.parseNumber(userData.idade);
 
     // Auto-inferência para criança beneficiária (idade < 16)
