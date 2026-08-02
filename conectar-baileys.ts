@@ -419,9 +419,20 @@ async function connectToWhatsApp() {
                             ? msg.messageTimestamp 
                             : (msg.messageTimestamp?.low || 0);
 
-                        if (msgTime < startupTime - 15 || nowSeconds - msgTime > 3600) {
-                            console.log(`ℹ️ Ignorando mensagem histórica/antiga de ${from} (enviada há ${nowSeconds - msgTime}s)`);
-                            continue;
+                        const isOld = msgTime < startupTime - 15 || nowSeconds - msgTime > 3600;
+                        if (isOld) {
+                            // Verifica se o lead já possui cadastro ou sessão ativa
+                            const { data: hasSession } = await supabase
+                                .from('sofia_sessions')
+                                .select('phone')
+                                .eq('phone', from)
+                                .maybeSingle();
+                                
+                            if (hasSession) {
+                                console.log(`ℹ️ Ignorando mensagem histórica/antiga de ${from} (enviada há ${nowSeconds - msgTime}s)`);
+                                continue;
+                            }
+                            console.log(`📥 Processando mensagem antiga de novo lead ${from} (enviada há ${nowSeconds - msgTime}s)`);
                         }
 
                         // --- SEGURANÇA 4: Deduplicação de IDs de mensagens persistente no Supabase ---

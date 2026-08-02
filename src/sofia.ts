@@ -163,6 +163,11 @@ export class SofiaEngine {
 
     // 3. Remove introduções de nome comuns
     const intros = [
+      "muito prazer em conhecer o", "muito prazer em conhecer a", "muito prazer em conhecer",
+      "prazer em conhecer o", "prazer em conhecer a", "prazer em conhecer",
+      "muito prazer o", "muito prazer a", "muito prazer",
+      "prazer o", "prazer a", "prazer",
+      "satisfacao o", "satisfacao a", "satisfacao",
       "meu nome e o", "meu nome e a", "meu nome e",
       "meu nome o", "meu nome a", "meu nome",
       "eu me chamo o", "eu me chamo a", "eu me chamo",
@@ -490,21 +495,42 @@ export class SofiaEngine {
     return /\b(hoje ainda|hoje mesmo|semana que vem|quanto tempo demora|quando voc(e|ê)s|em quanto tempo|prazo de atendimento|prazo pra|quando posso esperar)\b/i.test(cleanText);
   }
 
-  limparEcoPerguntas(text: string): string {
+  limparEcoPerguntas(text: string, lastBotMessage?: string): string {
     let cleanText = text;
-    // 1. Remove citações completas de mensagens da Lara que iniciam com saudações conhecidas até o "?"
-    cleanText = cleanText.replace(/\b(prazer,?\s+[^!?\n]+|me\s+chamo\s+lara|escritorio\s+da\s+dra|monica\s+lucioli)\b[^]*?\?\s*/gi, '');
     
-    // 2. Remove saudações personalizadas comuns da Lara residuais
-    cleanText = cleanText.replace(/Prazer,?\s+[^!?\n]+!?,?\s*(?:Sinto muito (?:que esteja passando por isso|por toda essa dificuldade)\.?)?/gi, '');
-    cleanText = cleanText.replace(/Me chamo Lara,?\s+atendente do escritório da Dra\.\s+Mônica Lucioli\./gi, '');
+    // 1. Remoção direta de linhas que são cópias exatas da última mensagem do bot
+    if (lastBotMessage) {
+      const botLines = lastBotMessage.split('\n').map(l => l.trim()).filter(l => l.length > 5);
+      for (const line of botLines) {
+        const escaped = line.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+        const regex = new RegExp(escaped, 'gi');
+        cleanText = cleanText.replace(regex, '');
+      }
+    }
+
+    const hasBotPrazer = lastBotMessage ? lastBotMessage.toLowerCase().includes('prazer') : false;
+    const hasBotLara = lastBotMessage ? lastBotMessage.toLowerCase().includes('lara') : false;
+    const hasBotMonica = lastBotMessage ? lastBotMessage.toLowerCase().includes('monica') : false;
+
+    // 2. Remove citações completas de mensagens da Lara que iniciam com saudações conhecidas até o "?" (apenas se o bot tiver dito isso)
+    if (hasBotPrazer || hasBotLara || hasBotMonica) {
+      cleanText = cleanText.replace(/\b(prazer,?\s+[^!?\n]+|me\s+chamo\s+lara|escritorio\s+da\s+dra|monica\s+lucioli)\b[^]*?\?\s*/gi, '');
+    }
+    
+    // 3. Remove saudações personalizadas comuns da Lara residuais (apenas se o bot tiver dito isso)
+    if (hasBotPrazer) {
+      cleanText = cleanText.replace(/Prazer,?\s+[^!?\n]+!?,?\s*(?:Sinto muito (?:que esteja passando por isso|por toda essa dificuldade)\.?)?/gi, '');
+    }
+    if (hasBotLara) {
+      cleanText = cleanText.replace(/Me chamo Lara,?\s+atendente do escritório da Dra\.\s+Mônica Lucioli\./gi, '');
+    }
     cleanText = cleanText.replace(/Olá!?,?\s*(?:seja bem-vindo\(a\)|Tudo bem\?)?/gi, '');
     
     // Remove frases de empatia soltas que possam ter vazado
     cleanText = cleanText.replace(/Sinto muito por toda essa dificuldade\./gi, '');
     cleanText = cleanText.replace(/Sinto muito que esteja passando por isso\./gi, '');
     
-    // 3. Remove frases exatas de perguntas cadastradas na FSM
+    // 4. Remove frases exatas de perguntas cadastradas na FSM
     for (const questions of Object.values(STATE_QUESTIONS)) {
       for (const question of questions) {
         const escaped = question.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
@@ -897,18 +923,30 @@ JSON de retorno:`;
 
     if (!text) return "Desculpe, não consegui entender o seu áudio. Pode repetir ou digitar?";
 
+    const timestamp = new Date().toISOString();
+    let { data: session } = await this.supabase.from('sofia_sessions').select('*').eq('phone', phone).single();
+
+    let lastBotMessage = '';
+    if (session && session.user_data?.history) {
+      const history = session.user_data.history;
+      for (let i = history.length - 1; i >= 0; i--) {
+        if (history[i].role === 'assistant') {
+          lastBotMessage = history[i].content;
+          break;
+        }
+      }
+    }
+
     // Limpa qualquer citação/eco das próprias perguntas da Lara antes de processar
-    text = this.limparEcoPerguntas(text);
+    text = this.limparEcoPerguntas(text, lastBotMessage);
     if (!text || text.trim() === '') {
       console.log(`[INSTRUMENTAÇÃO] [Lead: ${phone}] ⚠️ Mensagem ignorada: continha apenas ecos de perguntas.`);
       return null;
     }
 
-    const timestamp = new Date().toISOString();
     console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 1. Mensagem recebida sanitizada: "${text}"`);
 
     const isGreeting = this.isSimpleGreeting(text);
-    let { data: session } = await this.supabase.from('sofia_sessions').select('*').eq('phone', phone).single();
     console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 2. Estado atual carregado: FSM="${session?.user_data?.state_fsm || 'N/A'}", Step="${session?.step || 'N/A'}"`);
 
     // 0. GUARDA DE ATENDIMENTO HUMANO: Se o lead já foi assumido por operador humano, silencia o bot
@@ -982,6 +1020,7 @@ JSON de retorno:`;
       // Recarrega a sessão recém-criada
       const { data: reloaded } = await this.supabase.from('sofia_sessions').select('*').eq('phone', phone).single();
       session = reloaded;
+      return finalReply;
     }
 
     let user_data = session.user_data || {};
