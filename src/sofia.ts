@@ -541,7 +541,7 @@ export class SofiaEngine {
     return cleanText.replace(/^\s+|\s+$/g, '').trim();
   }
 
-  async runExtraction(text: string, currentState?: string): Promise<any> {
+  async runExtraction(text: string, currentState?: string, metrics?: { llmMs: number }): Promise<any> {
     const prompt = `Você é um extrator de dados de texto especializado em triagem previdenciária.
 Sua única tarefa é analisar o texto enviado pelo cliente e extrair todas as informações preenchidas para os campos especificados abaixo.
 Responda APENAS com um objeto JSON válido, sem markdown, sem explicações. Qualquer campo não presente ou não mencionado no texto deve ser retornado como null.
@@ -611,7 +611,11 @@ JSON de retorno:`;
 
     try {
       console.log("🔍 Executando pre-extração de campos...");
+      const llmStart = Date.now();
       const responseText = await this.generateTextWithFallback(prompt);
+      if (metrics) {
+        metrics.llmMs += (Date.now() - llmStart);
+      }
       if (!responseText) return {};
       const cleanJson = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
       const extracted = JSON.parse(cleanJson);
@@ -831,7 +835,7 @@ JSON de retorno:`;
     return data;
   }
 
-  async runHybridExtraction(text: string, currentState?: string): Promise<any> {
+  async runHybridExtraction(text: string, currentState?: string, metrics?: { llmMs: number }): Promise<any> {
     const codeResult = this.interpretador_codigo(text, currentState);
     // Lista de estados que o interpretador_codigo já resolve com segurança sem precisar de IA
     const estadosResolvidosPorCodigo = [
@@ -899,7 +903,7 @@ JSON de retorno:`;
 
     console.log("🤖 Extração por Código incompleta. Executando fallback silencioso de IA...");
     console.log(`[FALLBACK_TRIGGERED] { state: "${currentState || 'unknown'}", reason: "code_extraction_incomplete" }`);
-    const iaResult = await this.runExtraction(text, currentState);
+    const iaResult = await this.runExtraction(text, currentState, metrics);
 
     const merged = { ...iaResult, ...codeResult };
     const sanitized = this.sanitizeExtractedData(merged, text, currentState);
@@ -959,6 +963,12 @@ JSON de retorno:`;
   }
 
   async processMessage(phone: string, input: string | Buffer, sendMessageCallback?: (reply: string) => Promise<boolean>) {
+    const tStart = Date.now();
+    let dbTotalMs = 0;
+    let extractionMs = 0;
+    let sendMs = 0;
+    const metrics = { llmMs: 0 };
+
     const isAudio = typeof input !== 'string';
     let text: string | null = null;
     const timestampStart = new Date().toISOString();
@@ -972,11 +982,13 @@ JSON de retorno:`;
       pendingSave.step = step;
       pendingSave.updates = updates;
       if (!sendMessageCallback) {
+        const dbStart = Date.now();
         await this.supabase.rpc('save_session_data', {
           p_phone: phone,
           p_step: step,
           p_user_data_updates: updates
         });
+        dbTotalMs += (Date.now() - dbStart);
       }
     };
 
@@ -1000,7 +1012,9 @@ JSON de retorno:`;
     if (!text) return "Desculpe, não consegui entender o seu áudio. Pode repetir ou digitar?";
 
     const timestamp = new Date().toISOString();
+    const dbReadStart = Date.now();
     let { data: session } = await this.supabase.from('sofia_sessions').select('*').eq('phone', phone).single();
+    dbTotalMs += (Date.now() - dbReadStart);
 
     let lastBotMessage = '';
     if (session && session.user_data?.history) {
@@ -1036,7 +1050,9 @@ JSON de retorno:`;
       sessionWasCreatedNow = true;
       console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] Criando sessão inicial para novo lead.`);
       // Executa a extração híbrida logo na primeira mensagem para capturar nome ou dados de cara
+      const tExtStart = Date.now();
       const initialExtracted = await this.runHybridExtraction(text, 'AWAITING_NAME');
+      extractionMs = Date.now() - tExtStart;
       
       const hour = parseInt(new Date().toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', hour12: false }));
       let saudacao = "Boa noite";
@@ -1090,19 +1106,25 @@ JSON de retorno:`;
 
       let success = true;
       if (sendMessageCallback) {
+        const sendStart = Date.now();
         success = await sendMessageCallback(finalReply);
+        sendMs = Date.now() - sendStart;
         if (success) {
           const timestamp = new Date().toISOString();
           console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] [FSM TRANSACTION] 💾 Gravando estado inicial no banco de dados pós-envio confirmado.`);
+          const dbStart = Date.now();
           await this.supabase.rpc('save_session_data', {
             p_phone: phone,
             p_step: 'welcome',
             p_user_data_updates: initialUserData
           });
+          dbTotalMs += (Date.now() - dbStart);
         } else {
           console.log(`[INSTRUMENTAÇÃO] [${new Date().toISOString()}] [Lead: ${phone}] [FSM TRANSACTION] ❌ Envio falhou. Abortando criação inicial da FSM.`);
         }
       }
+      const totalDuration = Date.now() - tStart;
+      console.log(`[TURN_DURATION]\nphone=${phone}\nduration_ms=${totalDuration}\nextraction_ms=${extractionMs}\nllm_ms=${metrics.llmMs}\ndb_ms=${dbTotalMs}\nsend_ms=${sendMs}`);
       return finalReply;
     }
 
@@ -1300,7 +1322,7 @@ JSON de retorno:`;
       return respostaFinal;
     }
 
-    const res = await this.handleStepWithAI(session, text, saveSession);
+    const res = await this.handleStepWithAI(session, text, saveSession, metrics);
     let finalReply = await this.interceptAndApplyThirdPartyConfirm(res, session, phone, saveSession);
 
     if (prefix) {
@@ -1318,27 +1340,40 @@ JSON de retorno:`;
 
     let success = true;
     if (sendMessageCallback) {
+      const sendStart = Date.now();
       success = await sendMessageCallback(finalReply);
+      sendMs = Date.now() - sendStart;
       if (success && pendingSave.updates) {
         const timestamp = new Date().toISOString();
         console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] [FSM TRANSACTION] 💾 Gravando estado consolidado no banco de dados pós-envio confirmado.`);
+        const dbStart = Date.now();
         const { error } = await this.supabase.rpc('save_session_data', {
           p_phone: phone,
           p_step: pendingSave.step,
           p_user_data_updates: pendingSave.updates
         });
+        dbTotalMs += (Date.now() - dbStart);
         if (error) {
           console.error(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] [FSM TRANSACTION] ❌ Erro ao salvar dados pós-envio:`, error);
+          throw new Error(`FSM Transaction Error: ${JSON.stringify(error)}`);
         }
       } else if (!success) {
         console.log(`[INSTRUMENTAÇÃO] [${new Date().toISOString()}] [Lead: ${phone}] [FSM TRANSACTION] ❌ Envio falhou. Abortando persistência para evitar descompressão de estados.`);
       }
     }
 
+    const totalDuration = Date.now() - tStart;
+    console.log(`[TURN_DURATION]\nphone=${phone}\nduration_ms=${totalDuration}\nextraction_ms=${extractionMs}\nllm_ms=${metrics.llmMs}\ndb_ms=${dbTotalMs}\nsend_ms=${sendMs}`);
+
     return finalReply;
   }
 
-  private async handleStepWithAI(session: any, text: string, saveSessionParam?: (step: string | null, updates: any) => Promise<void>) {
+  private async handleStepWithAI(
+    session: any, 
+    text: string, 
+    saveSessionParam?: (step: string | null, updates: any) => Promise<void>,
+    metrics?: { llmMs: number }
+  ) {
     const { step, user_data, phone } = session;
     let history = user_data?.history || [];
     const saveSession = saveSessionParam || (async (s: string | null, u: any) => {
@@ -1919,7 +1954,11 @@ ${JSON.stringify(history.map((h: any) => ({ role: h.role, content: h.content }))
 Gere a resposta da Lara (retorne APENAS o texto reescrito da pergunta base, sem mais nada):`;
 
     console.log(`🧠 Chamando inteligência artificial (Lara Conversacional) para gerar resposta...`);
+    const llmStart = Date.now();
     let finalReply = await this.generateTextWithFallback(promptSofia);
+    if (metrics) {
+      metrics.llmMs += (Date.now() - llmStart);
+    }
     if (!finalReply || finalReply.trim() === '') {
       finalReply = dryQuestion;
     }
@@ -1962,7 +2001,11 @@ Gere a resposta da Lara (retorne APENAS o texto reescrito da pergunta base, sem 
       console.warn(`🚨 ALERTA DE SEGURANÇA: Resposta gerada contém interrogação fiscal proibida: "${finalReply}". Re-gerando...`);
       const promptSofiaCorrection = `${promptSofia}\n\n⚠️ AVISO DE CORREÇÃO IMPORTANTE: A resposta gerada anteriormente continha a frase proibida ou um tom de auditoria/fiscalização contrapondo trabalho e benefício (ex: 'depende do benefício'). Reescreva a mensagem AGORA com foco exclusivo em acolhimento e empatia, sem fazer menção alguma a depender de benefício. Se precisar perguntar se a pessoa trabalha atualmente, use a forma suave: "Como está sua rotina de trabalho hoje em dia?". Não use a palavra "depende" ou "benefício" na pergunta.`;
       try {
+        const llmStartCorr = Date.now();
         const correctedReply = await this.generateTextWithFallback(promptSofiaCorrection);
+        if (metrics) {
+          metrics.llmMs += (Date.now() - llmStartCorr);
+        }
         if (correctedReply && correctedReply.trim() !== '' && !hasForbiddenFiscalInterrogation(correctedReply)) {
           finalReply = correctedReply.trim();
           console.log(`✅ Resposta corrigida e aprovada: "${finalReply}"`);

@@ -343,14 +343,24 @@ async function connectToWhatsApp() {
                         // Mantém o "digitando..." por 3 segundos
                         await new Promise(resolve => setTimeout(resolve, 3000));
                         await sock.sendPresenceUpdate('paused', fromRaw);
-                        try {
-                            const sent = await sock.sendMessage(fromRaw, { text: replyText });
-                            console.log(`✅ Resposta enviada com sucesso para ${fromRaw}. Message ID: ${sent?.key?.id}`);
-                            return true;
-                        } catch (errSend) {
-                            console.error(`❌ Erro ao enviar mensagem para ${fromRaw}:`, errSend);
-                            return false;
+
+                        let attempts = 0;
+                        const maxAttempts = 3;
+                        while (attempts < maxAttempts) {
+                            try {
+                                const sent = await sock.sendMessage(fromRaw, { text: replyText });
+                                console.log(`✅ Resposta enviada com sucesso para ${fromRaw}. Message ID: ${sent?.key?.id}`);
+                                return true;
+                            } catch (errSend) {
+                                attempts++;
+                                console.error(`❌ Erro ao enviar mensagem para ${fromRaw} (Tentativa ${attempts}/${maxAttempts}):`, errSend);
+                                if (attempts < maxAttempts) {
+                                    console.log(`[RETRY_SEND] { phone: "${from}", attempt: ${attempts}, max_attempts: ${maxAttempts} }`);
+                                    await new Promise(resolve => setTimeout(resolve, 1000 * attempts)); // Exponential backoff
+                                }
+                            }
                         }
+                        return false;
                     });
 
                     if (!reply) {
