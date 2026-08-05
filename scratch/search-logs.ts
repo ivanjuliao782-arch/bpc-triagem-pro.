@@ -1,54 +1,20 @@
-import * as fs from 'fs';
-import * as path from 'path';
+import fs from 'fs';
 
-const query = '553288746642';
+const logPath = 'C:\\Users\\gabri\\.gemini\\antigravity\\brain\\6802d5ea-6d5e-4392-a448-d7f35a8d16aa\\.system_generated\\tasks\\task-3501.log';
 
-function searchRecursive(dir: string) {
-  if (!fs.existsSync(dir)) return;
-  const files = fs.readdirSync(dir);
-  for (const file of files) {
-    const filePath = path.join(dir, file);
-    let stat;
-    try {
-      stat = fs.statSync(filePath);
-    } catch (e) {
-      continue;
-    }
-    if (stat.isDirectory()) {
-      if (file !== 'node_modules' && file !== '.git' && file !== 'dist') {
-        searchRecursive(filePath);
-      }
-    } else {
-      if (filePath.endsWith('.log') || filePath.endsWith('.txt') || filePath.endsWith('.jsonl')) {
-        let content = '';
-        try {
-          content = fs.readFileSync(filePath, 'utf-8');
-        } catch (e) {
-          continue;
-        }
-        if (content.includes(query)) {
-          console.log(`FOUND QUERY IN FILE: ${filePath}`);
-          const lines = content.split('\n');
-          for (let i = 0; i < lines.length; i++) {
-            if (lines[i].includes(query)) {
-              console.log(`Line ${i + 1}: ${lines[i]}`);
-              const start = Math.max(0, i - 10);
-              const end = Math.min(lines.length - 1, i + 30);
-              console.log('--- SURROUNDING LINES ---');
-              for (let j = start; j <= end; j++) {
-                console.log(`[${j + 1}] ${lines[j]}`);
-              }
-              console.log('-------------------------');
-            }
-          }
-        }
-      }
+function showLeadHistory(phone: string) {
+  if (!fs.existsSync(logPath)) {
+    console.error('Log file does not exist');
+    return;
+  }
+  const lines = fs.readFileSync(logPath, 'utf8').split('\n');
+  console.log(`=== HISTORY FOR LEAD ${phone} ===`);
+  for (const line of lines) {
+    if (line.includes(`Lead: ${phone}`) && (line.includes('1. Mensagem recebida') || line.includes('9. Resposta final') || line.includes('4. Dados extraídos') || line.includes('5. Estado calculado') || line.includes('FSM='))) {
+      console.log(line);
     }
   }
 }
 
-console.log('Searching in bpc-triagem-pro...');
-searchRecursive('C:\\Users\\gabri\\Downloads\\bpc-triagem-pro');
-
-console.log('Searching in gemini brain...');
-searchRecursive('C:\\Users\\gabri\\.gemini\\antigravity\\brain');
+showLeadHistory('553299083661');
+showLeadHistory('553284451653');
