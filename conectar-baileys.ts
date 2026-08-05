@@ -339,19 +339,22 @@ async function connectToWhatsApp() {
                     }
 
                     console.log(`🧠 Lara processando entrada do buffer de ${from}: "${consolidatedText.substring(0, 100)}..."`);
-                    const reply = await sofia.processMessage(from, consolidatedText);
-
-                    // Mantém o "digitando..." por 3 segundos
-                    await new Promise(resolve => setTimeout(resolve, 3000));
-                    await sock.sendPresenceUpdate('paused', fromRaw);
-
-                    if (reply) {
+                    const reply = await sofia.processMessage(from, consolidatedText, async (replyText) => {
+                        // Mantém o "digitando..." por 3 segundos
+                        await new Promise(resolve => setTimeout(resolve, 3000));
+                        await sock.sendPresenceUpdate('paused', fromRaw);
                         try {
-                            const sent = await sock.sendMessage(fromRaw, { text: reply });
+                            const sent = await sock.sendMessage(fromRaw, { text: replyText });
                             console.log(`✅ Resposta enviada com sucesso para ${fromRaw}. Message ID: ${sent?.key?.id}`);
+                            return true;
                         } catch (errSend) {
                             console.error(`❌ Erro ao enviar mensagem para ${fromRaw}:`, errSend);
+                            return false;
                         }
+                    });
+
+                    if (!reply) {
+                        await sock.sendPresenceUpdate('paused', fromRaw);
                     }
                 } else {
                     await sock.sendPresenceUpdate('paused', fromRaw);

@@ -151,7 +151,11 @@ export class SofiaEngine {
       .replace(/\s+/g, " ")
       .trim();
 
-    // 2. Remove saudações conhecidas
+    // CAMADA 1: Regex de Higienização de Saudações (com suporte a vogais repetidas)
+    const saudacoesRegex = /\b(o+i+|ol+a+|bom\s+dia+|boa\s+tard[ee]+|boa\s+noit[ee]+|e+a+i+|o+p+a+|salv[ee]+|blz|beleza)\b/gi;
+    clean = clean.replace(saudacoesRegex, "").trim();
+
+    // CAMADA 2: Blacklist de Saudações e Introduções
     const saudacoes = [
       "bom dia", "boa tarde", "boa noite", 
       "tudo bem", "tudo bom", "tudo joia", "como vai",
@@ -161,7 +165,6 @@ export class SofiaEngine {
       clean = clean.replace(new RegExp(`\\b${s}\\b`, 'g'), "").trim();
     }
 
-    // 3. Remove introduções de nome comuns
     const intros = [
       "muito prazer em conhecer o", "muito prazer em conhecer a", "muito prazer em conhecer",
       "prazer em conhecer o", "prazer em conhecer a", "prazer em conhecer",
@@ -184,37 +187,34 @@ export class SofiaEngine {
       clean = clean.replace(new RegExp(`\\b${intro}\\b`, 'g'), "").trim();
     }
 
-    // 4. Remove outras stop words comuns
     const stopWords = ["por favor", "por gentileza", "doutora", "dra", "lara", "atendente", "assistente"];
     for (const sw of stopWords) {
       clean = clean.replace(new RegExp(`\\b${sw}\\b`, 'g'), "").trim();
     }
 
-    // Limpa espaços extras
     clean = clean.replace(/\s+/g, " ").trim();
-    
-    // Remove "eu" isolado no início se ainda sobrar
     clean = clean.replace(/^eu\b/gi, "").trim();
 
-    // 5. Validação do nome restante
-    if (clean.length === 0) return null;
-    
-    // Nomes não contêm números
-    if (/\d/.test(clean)) return null;
+    // CAMADA 3: Validação Rigorosa
+    if (clean.length < 2) return null;
+
+    // Não deve conter números ou emojis (somente letras e espaços simples permitidos pós-normalização ASCII)
+    if (!/^[a-z\s]+$/i.test(clean)) return null;
 
     const words = clean.split(" ");
     
     // Deve ter entre 1 e 4 palavras
     if (words.length < 1 || words.length > 4) return null;
 
-    // Lista de palavras proibidas (verbos de ação comuns ou termos de negação)
+    // Lista de palavras proibidas (verbos, negação ou termos de negócios)
     const forbidden = [
       "nao", "sim", "advogado", "ajuda", "caso", "processo", "inss", "bpc", "loas", "aposentar", "aposentadoria",
       "meu", "minha", "meus", "minhas", "nome", "nomes", "doutora", "doutor", "dra", "dr", "senhor", "senhora"
     ];
+    
     for (const w of words) {
       if (forbidden.includes(w)) return null;
-      if (w.length < 2 && w !== "e") return null; // Evita letras soltas
+      if (w.length < 2 && w !== "e") return null; // Evita letras soltas, exceto conector "e"
     }
 
     // Capitaliza cada palavra do nome
@@ -674,6 +674,45 @@ JSON de retorno:`;
       }
     }
 
+    // 1.5 Deficiência (AWAITING_DISABILITY)
+    if (currentState === 'AWAITING_DISABILITY') {
+      const disabilityMap: Record<string, string> = {
+        motora: "motora",
+        fisica: "motora",
+        fisicamotora: "motora",
+        visual: "visual",
+        monocular: "visual",
+        cegueira: "visual",
+        cornea: "visual",
+        auditiva: "auditiva",
+        surdez: "auditiva",
+        mental: "mental",
+        intelectual: "mental",
+        psicossocial: "mental"
+      };
+
+      const hasNegation = /\b(nao|nenhuma|nao tenho|nao possuo|gracas a deus nao)\b/i.test(clean);
+      if (hasNegation) {
+        data.tem_deficiencia = false;
+        data.deficiencia = "Não";
+      } else {
+        const normalizedWords = clean.replace(/\s+/g, "");
+        let foundMatch = false;
+        for (const key of Object.keys(disabilityMap)) {
+          if (clean.includes(key) || normalizedWords.includes(key)) {
+            data.tem_deficiencia = true;
+            data.deficiencia = disabilityMap[key];
+            foundMatch = true;
+            break;
+          }
+        }
+        if (!foundMatch && /\b(sequela|cadeirante|amputad|cego|surdo|mudo|paralisia|deficiente)\b/i.test(clean)) {
+          data.tem_deficiencia = true;
+          data.deficiencia = text.trim();
+        }
+      }
+    }
+
     // 2. Idade (AWAITING_AGE)
     if (currentState === 'AWAITING_AGE') {
       const words = clean.split(/\s+/);
@@ -799,7 +838,8 @@ JSON de retorno:`;
       'AWAITING_NAME', 'AWAITING_LAWYER', 'AWAITING_AGE', 
       'BPC_AWAITING_HOUSEHOLD_INCOME', 'BPC_AWAITING_HOME_STATUS', 
       'BPC_AWAITING_CADUNICO', 'BPC_AWAITING_HOUSEHOLD',
-      'LAWYER_CHECK_ACTION', 'LAWYER_CHECK_CONTRACT', 'LAWYER_CHECK_PROCURACAO'
+      'LAWYER_CHECK_ACTION', 'LAWYER_CHECK_CONTRACT', 'LAWYER_CHECK_PROCURACAO',
+      'AWAITING_DISABILITY'
     ];
     let needsFallback = true; // Por padrão, SEMPRE usa IA como rede de segurança
     if (currentState === 'AWAITING_NAME') {
@@ -815,6 +855,7 @@ JSON de retorno:`;
     if (currentState === 'BPC_AWAITING_HOME_STATUS' && !codeResult.bpc_casa_alugada_propria) needsFallback = true;
     if (currentState === 'BPC_AWAITING_CADUNICO' && codeResult.bpc_cad_unico === undefined) needsFallback = true;
     if (currentState === 'BPC_AWAITING_HOUSEHOLD' && !codeResult.bpc_pessoas_casa) needsFallback = true;
+    if (currentState === 'AWAITING_DISABILITY' && codeResult.tem_deficiencia === undefined) needsFallback = true;
     // Só marca como resolvido por código (false) se o estado está na lista segura E o código de fato extraiu o dado
     if (estadosResolvidosPorCodigo.includes(currentState || '')) {
       if (currentState === 'AWAITING_NAME') {
@@ -830,6 +871,7 @@ JSON de retorno:`;
       if (currentState === 'BPC_AWAITING_HOME_STATUS' && codeResult.bpc_casa_alugada_propria) needsFallback = false;
       if (currentState === 'BPC_AWAITING_CADUNICO' && codeResult.bpc_cad_unico !== undefined) needsFallback = false;
       if (currentState === 'BPC_AWAITING_HOUSEHOLD' && codeResult.bpc_pessoas_casa) needsFallback = false;
+      if (currentState === 'AWAITING_DISABILITY' && codeResult.tem_deficiencia !== undefined) needsFallback = false;
     }
 
     // Se a mensagem for longa (mais de 12 palavras) ou contiver múltiplos números, força fallback para IA para capturar dados voluntários extras
@@ -846,18 +888,39 @@ JSON de retorno:`;
 
     if (!needsFallback) {
       console.log("⚡ Extração por Código resolvida com sucesso (sem fallback de IA).");
-      return this.sanitizeExtractedData(codeResult, text, currentState);
+      const sanitized = this.sanitizeExtractedData(codeResult, text, currentState);
+      for (const [key, val] of Object.entries(sanitized)) {
+        if (val !== null && val !== undefined && val !== "") {
+          console.log(`[EXTRACT_CONFIDENCE] { field: "${key}", value: ${JSON.stringify(val)}, confidence: "high", engine: "code" }`);
+        }
+      }
+      return sanitized;
     }
 
     console.log("🤖 Extração por Código incompleta. Executando fallback silencioso de IA...");
+    console.log(`[FALLBACK_TRIGGERED] { state: "${currentState || 'unknown'}", reason: "code_extraction_incomplete" }`);
     const iaResult = await this.runExtraction(text, currentState);
 
     const merged = { ...iaResult, ...codeResult };
-    return this.sanitizeExtractedData(merged, text, currentState);
+    const sanitized = this.sanitizeExtractedData(merged, text, currentState);
+    for (const [key, val] of Object.entries(sanitized)) {
+      if (val !== null && val !== undefined && val !== "") {
+        const isFromCode = codeResult[key] !== undefined && codeResult[key] !== null && codeResult[key] !== "";
+        const engine = isFromCode ? "code" : "llm";
+        const confidence = isFromCode ? "high" : "medium";
+        console.log(`[EXTRACT_CONFIDENCE] { field: "${key}", value: ${JSON.stringify(val)}, confidence: "${confidence}", engine: "${engine}" }`);
+      }
+    }
+    return sanitized;
   }
 
 
-  private async interceptAndApplyThirdPartyConfirm(reply: string, session: any, phone: string): Promise<string> {
+  private async interceptAndApplyThirdPartyConfirm(
+    reply: string, 
+    session: any, 
+    phone: string, 
+    saveSession: (step: string | null, updates: any) => Promise<void>
+  ): Promise<string> {
     const user_data = session.user_data;
     if (user_data && user_data.beneficiario_terceiro && !user_data.confirmou_beneficiario_enviado) {
       const familiar = String(user_data.beneficiario_terceiro).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
@@ -880,29 +943,42 @@ JSON de retorno:`;
 
       user_data.confirmou_beneficiario_enviado = true;
       
-      await this.supabase.rpc('save_session_data', {
-        p_phone: phone,
-        p_step: null,
-        p_user_data_updates: {
-          confirmou_beneficiario_enviado: true,
-          history: user_data.history ? user_data.history.map((h: any, idx: number) => {
-            if (idx === user_data.history.length - 1 && h.role === 'assistant') {
-              return { ...h, content: newReply };
-            }
-            return h;
-          }) : []
+      const newHistory = user_data.history ? user_data.history.map((h: any, idx: number) => {
+        if (idx === user_data.history.length - 1 && h.role === 'assistant') {
+          return { ...h, content: newReply };
         }
-      });
+        return h;
+      }) : [];
+
+      user_data.history = newHistory;
+      await saveSession(null, user_data);
 
       return newReply;
     }
     return reply;
   }
 
-  async processMessage(phone: string, input: string | Buffer) {
+  async processMessage(phone: string, input: string | Buffer, sendMessageCallback?: (reply: string) => Promise<boolean>) {
     const isAudio = typeof input !== 'string';
     let text: string | null = null;
     const timestampStart = new Date().toISOString();
+
+    const pendingSave = {
+      step: null as string | null,
+      updates: null as any
+    };
+
+    const saveSession = async (step: string | null, updates: any) => {
+      pendingSave.step = step;
+      pendingSave.updates = updates;
+      if (!sendMessageCallback) {
+        await this.supabase.rpc('save_session_data', {
+          p_phone: phone,
+          p_step: step,
+          p_user_data_updates: updates
+        });
+      }
+    };
 
     if (isAudio) {
       console.log(`[INSTRUMENTAÇÃO ÁUDIO] [${timestampStart}] [Lead: ${phone}] 1. Áudio recebido (Buffer size: ${(input as Buffer).length} bytes)`);
@@ -998,7 +1074,6 @@ JSON de retorno:`;
         ...initialExtracted
       };
 
-      // Se o usuário informou o nome de primeira:
       if (initialExtracted.nome_usuario) {
         initialUserData.history = [
           { role: 'assistant', content: defaultGreeting },
@@ -1011,173 +1086,120 @@ JSON de retorno:`;
         }
       }
 
-      await this.supabase.rpc('save_session_data', {
-        p_phone: phone,
-        p_step: 'welcome',
-        p_user_data_updates: initialUserData
-      });
+      await saveSession('welcome', initialUserData);
 
-      // Recarrega a sessão recém-criada
-      const { data: reloaded } = await this.supabase.from('sofia_sessions').select('*').eq('phone', phone).single();
-      session = reloaded;
+      let success = true;
+      if (sendMessageCallback) {
+        success = await sendMessageCallback(finalReply);
+        if (success) {
+          const timestamp = new Date().toISOString();
+          console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] [FSM TRANSACTION] 💾 Gravando estado inicial no banco de dados pós-envio confirmado.`);
+          await this.supabase.rpc('save_session_data', {
+            p_phone: phone,
+            p_step: 'welcome',
+            p_user_data_updates: initialUserData
+          });
+        } else {
+          console.log(`[INSTRUMENTAÇÃO] [${new Date().toISOString()}] [Lead: ${phone}] [FSM TRANSACTION] ❌ Envio falhou. Abortando criação inicial da FSM.`);
+        }
+      }
       return finalReply;
     }
 
     let user_data = session.user_data || {};
-    let stateFsm = user_data.state_fsm || 'AWAITING_NAME';
-    let history = user_data.history || [];
     let resolved = this.resolveFSMState(user_data);
 
     let extractedData: any = {};
-    if (!sessionWasCreatedNow) {
-      if (session.user_data?.followup_sent) {
-        extractedData.followup_sent = false;
-        extractedData.followup_sent_at = null;
+    if (this.detectarAutoBeneficiario(text)) {
+      console.log(`[EXTRAÇÃO] Correção para auto-beneficiário detectada no texto: "${text}". Resetando beneficiario_terceiro.`);
+      extractedData.beneficiario_terceiro = null;
+      extractedData.beneficiario_ja_confirmado = true; // Trava para sempre
+    }
+
+    if (!isGreeting) {
+      const currentState = session.user_data?.state_fsm || undefined;
+      const rawExtracted = await this.runHybridExtraction(text, currentState);
+      extractedData = { ...extractedData, ...rawExtracted };
+
+      if (session.user_data?.beneficiario_terceiro && session.user_data?.idade !== undefined && session.user_data?.idade !== null) {
+        delete extractedData.idade;
       }
 
-      if (this.detectarAutoBeneficiario(text)) {
-        console.log(`[EXTRAÇÃO] Correção para auto-beneficiário detectada no texto: "${text}". Resetando beneficiario_terceiro.`);
-        extractedData.beneficiario_terceiro = null;
-        extractedData.beneficiario_ja_confirmado = true; // Trava para sempre
+      if (session.user_data?.beneficiario_terceiro && extractedData.beneficiario_terceiro !== undefined && !this.detectarAutoBeneficiario(text)) {
+        delete extractedData.beneficiario_terceiro;
       }
 
-      // Detecta beneficiário terceiro em qualquer mensagem, antes de tudo (código puro)
-      let beneficiarioTerceiro = session.user_data?.beneficiario_terceiro || null;
-      if (extractedData.beneficiario_terceiro === null) {
-        beneficiarioTerceiro = null;
-      }
-
-      if (!isGreeting) {
-        const currentState = session.user_data?.state_fsm || undefined;
-
-        console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 3. Conteúdo enviado ao extractor: "${text}" (currentState: "${currentState}")`);
-        if (isAudio) {
-          console.log(`[INSTRUMENTAÇÃO ÁUDIO] [${timestamp}] [Lead: ${phone}] 4. Resultado enviado ao extractor: "${text}"`);
-        }
-        const rawExtracted = await this.runHybridExtraction(text, currentState);
-        extractedData = {
-          ...extractedData,
-          ...rawExtracted
-        };
-
-        if (session.user_data?.beneficiario_terceiro && session.user_data?.idade !== undefined && session.user_data?.idade !== null) {
-          delete extractedData.idade;
-        }
-
-        // Trava para evitar que beneficiario_terceiro já confirmado seja sobrescrito ou alterado, exceto se for uma auto-correção explícita
-        if (session.user_data?.beneficiario_terceiro && extractedData.beneficiario_terceiro !== undefined && !this.detectarAutoBeneficiario(text)) {
+      if (currentState && currentState !== 'AWAITING_NAME' && currentState !== 'welcome') {
+        if (extractedData.beneficiario_terceiro !== undefined && !session.user_data?.beneficiario_terceiro) {
           delete extractedData.beneficiario_terceiro;
         }
-
-        // Proteção contra sobrescrita ou criação tardia de beneficiário terceiro no meio do fluxo
-        if (currentState && currentState !== 'AWAITING_NAME' && currentState !== 'welcome') {
-          // Se já está estabelecido que é para o próprio cliente (beneficiario_terceiro está nulo no banco),
-          // não deixa a IA inventar um parente baseando-se em menções de renda ou moradia.
-          if (extractedData.beneficiario_terceiro !== undefined && !session.user_data?.beneficiario_terceiro) {
-            delete extractedData.beneficiario_terceiro;
-          }
-          if (extractedData.nome_usuario !== undefined && session.user_data?.nome_usuario) {
-            delete extractedData.nome_usuario;
-          }
+        if (extractedData.nome_usuario !== undefined && session.user_data?.nome_usuario) {
+          delete extractedData.nome_usuario;
         }
-
-        // Trava para evitar que sofrimento_relatado seja sobrescrito com null em turnos futuros
-        const oldSofrimento = session.user_data?.sofrimento_relatado;
-        if (oldSofrimento && oldSofrimento.trim() !== '' && (!extractedData.sofrimento_relatado || extractedData.sofrimento_relatado.trim() === '')) {
-          delete extractedData.sofrimento_relatado;
-        }
-
-        // Trava para evitar que doenças já registradas sejam sobrescritas por negações em turnos posteriores
-        const oldDoenca = session.user_data?.doenca;
-        if (oldDoenca && oldDoenca.toLowerCase() !== 'não' && oldDoenca.toLowerCase() !== 'nao' && oldDoenca.trim() !== '') {
-          delete extractedData.doenca;
-          delete extractedData.tem_doenca_ou_limitacao;
-        }
-
-        const oldDeficiencia = session.user_data?.deficiencia;
-        if (oldDeficiencia && oldDeficiencia.toLowerCase() !== 'não' && oldDeficiencia.toLowerCase() !== 'nao' && oldDeficiencia.trim() !== '') {
-          delete extractedData.deficiencia;
-          delete extractedData.tem_deficiencia;
-        }
-
-        // Trava para evitar que trabalha_atualmente já confirmado seja sobrescrito por respostas ambíguas
-        if (session.user_data?.trabalha_atualmente === true && extractedData.trabalha_atualmente === false) {
-          const cleanText = text.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
-          const clearNegation = /\b(parei de trabalhar|nao trabalho mais|desempregad|fui demitid|perdi o emprego)\b/i.test(cleanText);
-          if (!clearNegation) {
-            delete extractedData.trabalha_atualmente;
-            delete extractedData.esta_contribuindo_atualmente;
-          }
-        }
-
-        if (currentState === 'AWAITING_CURRENT_CONTRIBUTION' && session.user_data?.reformulou_trabalho === true) {
-          if (extractedData.esta_contribuindo_atualmente === undefined) {
-            extractedData.esta_contribuindo_atualmente = false;
-          }
-        }
-        console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 4. Dados extraídos (híbrido): ${JSON.stringify(extractedData)}`);
-        if (isAudio) {
-          console.log(`[INSTRUMENTAÇÃO ÁUDIO] [${timestamp}] [Lead: ${phone}] 5. Campos extraídos do áudio: ${JSON.stringify(extractedData)}`);
-        }
-        console.log("📝 Dados extraídos previamente:", JSON.stringify(extractedData));
       }
 
-      const oldNome = user_data.nome_usuario;
-      const newNome = extractedData.nome_usuario;
+      const oldSofrimento = session.user_data?.sofrimento_relatado;
+      if (oldSofrimento && oldSofrimento.trim() !== '' && (!extractedData.sofrimento_relatado || extractedData.sofrimento_relatado.trim() === '')) {
+        delete extractedData.sofrimento_relatado;
+      }
 
-      let updatedUserData = {
-        ...user_data,
-        ...extractedData
+      const oldDoenca = session.user_data?.doenca;
+      if (oldDoenca && oldDoenca.toLowerCase() !== 'não' && oldDoenca.toLowerCase() !== 'nao' && oldDoenca.trim() !== '') {
+        delete extractedData.doenca;
+        delete extractedData.tem_doenca_ou_limitacao;
+      }
+
+      const oldDeficiencia = session.user_data?.deficiencia;
+      if (oldDeficiencia && oldDeficiencia.toLowerCase() !== 'não' && oldDeficiencia.toLowerCase() !== 'nao' && oldDeficiencia.trim() !== '') {
+        delete extractedData.deficiencia;
+        delete extractedData.tem_deficiencia;
+      }
+
+      if (session.user_data?.trabalha_atualmente === true && extractedData.trabalha_atualmente === false) {
+        const cleanText = text.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+        const clearNegation = /\b(parei de trabalhar|nao trabalho mais|desempregad|fui demitid|perdi o emprego)\b/i.test(cleanText);
+        if (!clearNegation) {
+          delete extractedData.trabalha_atualmente;
+          delete extractedData.esta_contribuindo_atualmente;
+        }
+      }
+
+      if (currentState === 'AWAITING_CURRENT_CONTRIBUTION' && session.user_data?.reformulou_trabalho === true) {
+        if (extractedData.esta_contribuindo_atualmente === undefined) {
+          extractedData.esta_contribuindo_atualmente = false;
+        }
+      }
+    }
+
+    const oldNome = user_data.nome_usuario;
+    const newNome = extractedData.nome_usuario;
+
+    let updatedUserData = { ...user_data, ...extractedData };
+
+    if (newNome && oldNome && newNome.trim().toLowerCase() !== oldNome.trim().toLowerCase()) {
+      updatedUserData = {
+        ...extractedData,
+        history: [
+          { role: 'assistant', content: `Olá! Tudo bem?\nMe chamo Lara, sou atendente do escritório da Dra. Mônica Lucioli. Com quem eu falo?` },
+          { role: 'user', content: text }
+        ],
+        state_fsm: 'AWAITING_NAME',
+        nome_usuario: newNome
       };
+    }
 
-      // Se um novo nome diferente for informado, resetamos o histórico e reiniciamos a FSM para o novo cliente
-      if (newNome && oldNome && newNome.trim().toLowerCase() !== oldNome.trim().toLowerCase()) {
-        console.log(`🔄 Novo nome detectado (${newNome} diferente de ${oldNome}). Reiniciando FSM da sessão...`);
-        updatedUserData = {
-          ...extractedData,
-          history: [
-            { role: 'assistant', content: `Olá! Tudo bem?\nMe chamo Lara, sou atendente do escritório da Dra. Mônica Lucioli. Com quem eu falo?` },
-            { role: 'user', content: text }
-          ],
-          state_fsm: 'AWAITING_NAME',
-          nome_usuario: newNome
-        };
-      }
+    resolved = this.resolveFSMState(updatedUserData);
+    updatedUserData.state_fsm = resolved.state;
+    if (resolved.fluxo_ativo) {
+      updatedUserData.fluxo_ativo = resolved.fluxo_ativo;
+    }
+    updatedUserData.score_total = calcularScorePrevidenciario(updatedUserData);
+    user_data = updatedUserData;
+    session.user_data = updatedUserData;
 
-      // Resolve a FSM deterministicamente pós-extração
-      resolved = this.resolveFSMState(updatedUserData);
-      stateFsm = resolved.state;
-      if (resolved.fluxo_ativo) {
-        updatedUserData.fluxo_ativo = resolved.fluxo_ativo;
-      }
-      updatedUserData.score_total = calcularScorePrevidenciario(updatedUserData);
-      user_data = updatedUserData;
-      session.user_data = updatedUserData;
-      console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 5. Estado calculado pela FSM (pré-AI): state="${resolved.state}", fluxo="${resolved.fluxo_ativo || 'N/A'}"`);
-
-      // Se houver novos dados extraídos ou o histórico foi reiniciado, salva no banco de dados imediatamente
-      if (Object.keys(extractedData).length > 0 || (newNome && oldNome && newNome.trim().toLowerCase() !== oldNome.trim().toLowerCase())) {
-        console.log("💾 Salvando dados extraídos previamente no banco de dados...");
-        const updates = updatedUserData;
-        console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 6. Payload enviado ao Supabase (pré-AI): step=null, updates=${JSON.stringify(updates)}`);
-
-        const { data: newMergedData, error } = await this.supabase.rpc('save_session_data', {
-          p_phone: phone,
-          p_step: null,
-          p_user_data_updates: updates
-        });
-        
-        if (error) {
-          console.error(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 7. Falha na persistência (pré-AI): ${JSON.stringify(error)}`);
-        } else {
-          console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 7. Confirmação de persistência bem-sucedida (pré-AI). Data retornado: ${JSON.stringify(newMergedData)}`);
-          session.user_data = newMergedData || updatedUserData;
-          user_data = session.user_data;
-        }
-
-        const { data: reReadSession } = await this.supabase.from('sofia_sessions').select('*').eq('phone', phone).single();
-        console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 8. Estado relido após save (pré-AI): FSM="${reReadSession?.user_data?.state_fsm}", step="${reReadSession?.step}", user_data=${JSON.stringify(reReadSession?.user_data)}"`);
-      }
+    if (Object.keys(extractedData).length > 0 || (newNome && oldNome && newNome.trim().toLowerCase() !== oldNome.trim().toLowerCase())) {
+      console.log("💾 Marcando dados extraídos (pré-AI) para salvamento pós-confirmação.");
+      await saveSession(null, updatedUserData);
     }
 
     const cleanTextClean = text.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
@@ -1185,7 +1207,7 @@ JSON de retorno:`;
     
     if (this.detectarPerguntaEndereco(text)) {
       const calledWrongName = /\b(doutora|dra|senhora|senhor|moca)\b/i.test(cleanTextClean);
-      const ehPrimeiraMensagem = !history || history.length === 0;
+      const ehPrimeiraMensagem = !user_data.history || user_data.history.length === 0;
       let prefixoCorrecao = "";
       if (calledWrongName && !ehPrimeiraMensagem) {
         prefixoCorrecao = "Pode me chamar de Lara. ";
@@ -1193,7 +1215,7 @@ JSON de retorno:`;
       prefix = `${prefixoCorrecao}Nosso escritório fica localizado na Avenida Cardoso Saraiva, 688, Matias Barbosa MG. Atendimento presencial em Matias e Juiz de Fora.\n\nAtendemos on-line em todo Brasil.\n\n`;
     } else if (this.detectarPerguntaPrazo(text)) {
       const calledWrongName = /\b(doutora|dra|senhora|senhor|moca)\b/i.test(cleanTextClean);
-      const ehPrimeiraMensagem = !history || history.length === 0;
+      const ehPrimeiraMensagem = !user_data.history || user_data.history.length === 0;
       let prefixoCorrecao = "";
       if (calledWrongName && !ehPrimeiraMensagem) {
         prefixoCorrecao = "Pode me chamar de Lara. ";
@@ -1201,7 +1223,7 @@ JSON de retorno:`;
       prefix = `${prefixoCorrecao}Vou registrar todo o seu caso agora. Nossa equipe analisa com cuidado e retorna dentro de alguns instantes.\n\n`;
     } else if (this.detectarPerguntaValor(text)) {
       const calledWrongName = /\b(doutora|dra|senhora|senhor|moca)\b/i.test(cleanTextClean);
-      const ehPrimeiraMensagem = !history || history.length === 0;
+      const ehPrimeiraMensagem = !user_data.history || user_data.history.length === 0;
       let prefixoCorrecao = "";
       if (calledWrongName && !ehPrimeiraMensagem) {
         prefixoCorrecao = "Pode me chamar de Lara. ";
@@ -1209,125 +1231,123 @@ JSON de retorno:`;
       prefix = `${prefixoCorrecao}Essa primeira consulta para entender o seu caso é totalmente gratuita. Primeiro deixa eu entender sua situação.\n\n`;
     }
 
-    // 1. Extração prévia de campos do texto antes de qualquer coisa (bloco consolidado) - Removido daqui, rodado no topo!
-    // já declarado no topo
-
-    if (this.detectarAutoBeneficiario(text)) {
-      console.log(`[EXTRAÇÃO] Correção para auto-beneficiário detectada no texto: "${text}". Resetando beneficiario_terceiro.`);
-      extractedData.beneficiario_terceiro = null;
-      extractedData.beneficiario_ja_confirmado = true; // Trava para sempre
-    }
-
-    // Detecta beneficiário terceiro em qualquer mensagem, antes de tudo (código puro)
-    let beneficiarioTerceiro = session?.user_data?.beneficiario_terceiro || null;
-    if (extractedData.beneficiario_terceiro === null) {
-      beneficiarioTerceiro = null;
-    }
-
-    if (session && !isGreeting) {
-      // Já rodou no topo, só sincroniza para não quebrar referências posteriores
-      extractedData = session.user_data;
-    }
-
-    const currentHasLawyerAndUnrecoverable = session && (
-      session.user_data?.has_lawyer === true ||
-      session.user_data?.has_lawyer === 'true' ||
-      extractedData.has_lawyer === true ||
-      extractedData.has_lawyer === 'true'
-    ) && session.user_data?.is_recoverable === false;
+    const currentHasLawyerAndUnrecoverable = (
+      user_data.has_lawyer === true || user_data.has_lawyer === 'true'
+    ) && user_data.is_recoverable === false;
 
     if (currentHasLawyerAndUnrecoverable) {
-      // Se já possui advogado, encerra de forma educada e definitiva sem chamar a IA
-      const nome = session.user_data?.nome_usuario || 'amigo(a)';
-      // Garante que o status_final fique salvo como com_advogado e has_lawyer como true
-      const updates = { has_lawyer: true, status_final: 'com_advogado', score_total: 0 };
-      console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 6. Payload enviado ao Supabase: step="finished", updates=${JSON.stringify(updates)}`);
-
-      const { data: newMergedData, error } = await this.supabase.rpc('save_session_data', {
-        p_phone: phone,
-        p_step: 'finished',
-        p_user_data_updates: updates
-      });
-
-      if (error) {
-        console.error(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 7. Falha na persistência: ${JSON.stringify(error)}`);
-      } else {
-        console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 7. Confirmação de persistência bem-sucedida. Data retornado: ${JSON.stringify(newMergedData)}`);
-      }
-
-      const { data: reReadSession } = await this.supabase.from('sofia_sessions').select('*').eq('phone', phone).single();
-      console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 8. Estado relido após save: FSM="${reReadSession?.user_data?.state_fsm}", step="${reReadSession?.step}", user_data=${JSON.stringify(reReadSession?.user_data)}"`);
+      const nome = user_data.nome_usuario || 'amigo(a)';
+      const updates = { ...user_data, has_lawyer: true, status_final: 'com_advogado', score_total: 0 };
+      await saveSession('finished', updates);
 
       const finalReply = `Entendo, ${nome}. Por questões éticas, nosso escritório não interfere em processos que já estão sendo conduzidos por outro advogado. O ideal é continuar com ele. Inclusive, se o seu caso for favorável, ter dois advogados geraria dois honorários, o que não seria bom pra você.`;
-      console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 9. Resposta final enviada ao cliente: "${finalReply}"`);
+      
+      let success = true;
+      if (sendMessageCallback) {
+        success = await sendMessageCallback(finalReply);
+        if (success) {
+          const timestamp = new Date().toISOString();
+          console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] [FSM TRANSACTION] 💾 Gravando encerramento de advogado pós-envio confirmado.`);
+          await this.supabase.rpc('save_session_data', {
+            p_phone: phone,
+            p_step: 'finished',
+            p_user_data_updates: updates
+          });
+        }
+      }
       return finalReply;
     }
 
-    // GUARDA GLOBAL: Se a sessão já está no estado FINISHED, não processa nada - retorna mensagem de encerramento
-    if (session && session.user_data?.state_fsm === 'FINISHED' && session.user_data?.status_final !== 'com_advogado') {
-      if (session.user_data?.triagem_encerrada_msg_enviada) {
-        console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] GUARDA GLOBAL FINISHED: Mensagem de encerramento já foi enviada. Ignorando silenciosamente.`);
-        return null;
-      }
+    if (user_data.state_fsm === 'FINISHED' && user_data.status_final !== 'com_advogado') {
+      if (user_data.triagem_encerrada_msg_enviada) return null;
 
       const cleanText = text.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
       const isThanks = /\b(obrigad|valeu|agradec|tks|thanks|obg)\b/i.test(cleanText);
       if (isThanks) {
         const respostaAgradecimento = "De nada, daqui alguns minutos um profissional entrará em contato com você.";
-        console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] GUARDA GLOBAL FINISHED (AGRADECIMENTO): Retornando retribuição.`);
-        console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 9. Resposta final enviada ao cliente: "${respostaAgradecimento}"`);
-        
-        // Marca como enviado também para não responder nem a agradecimentos futuros
-        const updates = { triagem_encerrada_msg_enviada: true };
-        await this.supabase.rpc('save_session_data', {
-          p_phone: phone,
-          p_step: 'finished',
-          p_user_data_updates: updates
-        });
-        
+        const updates = { ...user_data, triagem_encerrada_msg_enviada: true };
+        await saveSession('finished', updates);
+ 
+        let success = true;
+        if (sendMessageCallback) {
+          success = await sendMessageCallback(respostaAgradecimento);
+          if (success) {
+            await this.supabase.rpc('save_session_data', {
+              p_phone: phone,
+              p_step: 'finished',
+              p_user_data_updates: updates
+            });
+          }
+        }
         return respostaAgradecimento;
       }
       
       const respostaFinal = `Com base no que você me contou nossa equipe vai analisar melhor o seu caso. Assim que possível entraremos em contato novamente`;
-      const updates = { triagem_encerrada_msg_enviada: true };
-      await this.supabase.rpc('save_session_data', {
-        p_phone: phone,
-        p_step: 'finished',
-        p_user_data_updates: updates
-      });
-
-      console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] GUARDA GLOBAL FINISHED: sessão já encerrada. Retornando mensagem de handoff.`);
-      console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 9. Resposta final enviada ao cliente: "${respostaFinal}"`);
+      const updates = { ...user_data, triagem_encerrada_msg_enviada: true };
+      await saveSession('finished', updates);
+ 
+      let success = true;
+      if (sendMessageCallback) {
+        success = await sendMessageCallback(respostaFinal);
+        if (success) {
+          await this.supabase.rpc('save_session_data', {
+            p_phone: phone,
+            p_step: 'finished',
+            p_user_data_updates: updates
+          });
+        }
+      }
       return respostaFinal;
     }
 
-    const res = await this.handleStepWithAI(session, text);
-    let finalReply = await this.interceptAndApplyThirdPartyConfirm(res, session, phone);
+    const res = await this.handleStepWithAI(session, text, saveSession);
+    let finalReply = await this.interceptAndApplyThirdPartyConfirm(res, session, phone, saveSession);
 
     if (prefix) {
       finalReply = prefix + finalReply;
-      // Recarrega e atualiza o histórico no banco de dados para incluir o prefixo
-      const { data: latestSession } = await this.supabase.from('sofia_sessions').select('*').eq('phone', phone).single();
-      if (latestSession && latestSession.user_data?.history && latestSession.user_data.history.length > 0) {
-        const historyCopy = [...latestSession.user_data.history];
-        const lastIdx = historyCopy.length - 1;
-        if (historyCopy[lastIdx].role === 'assistant') {
-          historyCopy[lastIdx].content = finalReply;
-          await this.supabase.rpc('save_session_data', {
-            p_phone: phone,
-            p_step: latestSession.step || 'welcome',
-            p_user_data_updates: { history: historyCopy }
-          });
+      if (user_data.history && user_data.history.length > 0) {
+        const lastIdx = user_data.history.length - 1;
+        if (user_data.history[lastIdx].role === 'assistant') {
+          user_data.history[lastIdx].content = finalReply;
+          if (pendingSave.updates) {
+            pendingSave.updates.history = user_data.history;
+          }
         }
+      }
+    }
+
+    let success = true;
+    if (sendMessageCallback) {
+      success = await sendMessageCallback(finalReply);
+      if (success && pendingSave.updates) {
+        const timestamp = new Date().toISOString();
+        console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] [FSM TRANSACTION] 💾 Gravando estado consolidado no banco de dados pós-envio confirmado.`);
+        const { error } = await this.supabase.rpc('save_session_data', {
+          p_phone: phone,
+          p_step: pendingSave.step,
+          p_user_data_updates: pendingSave.updates
+        });
+        if (error) {
+          console.error(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] [FSM TRANSACTION] ❌ Erro ao salvar dados pós-envio:`, error);
+        }
+      } else if (!success) {
+        console.log(`[INSTRUMENTAÇÃO] [${new Date().toISOString()}] [Lead: ${phone}] [FSM TRANSACTION] ❌ Envio falhou. Abortando persistência para evitar descompressão de estados.`);
       }
     }
 
     return finalReply;
   }
 
-  private async handleStepWithAI(session: any, text: string) {
+  private async handleStepWithAI(session: any, text: string, saveSessionParam?: (step: string | null, updates: any) => Promise<void>) {
     const { step, user_data, phone } = session;
     let history = user_data?.history || [];
+    const saveSession = saveSessionParam || (async (s: string | null, u: any) => {
+      await this.supabase.rpc('save_session_data', {
+        p_phone: phone,
+        p_step: s,
+        p_user_data_updates: u
+      });
+    });
 
     // Resolve a FSM determinística para garantir que estamos no estado correto
     let resolved = this.resolveFSMState(user_data);
@@ -1369,15 +1389,9 @@ JSON de retorno:`;
         const reply = "Você ainda está trabalhando hoje em dia?";
         const newHistory = [...history, { role: 'user', content: text }, { role: 'assistant', content: reply }];
         
-        await this.supabase.rpc('save_session_data', {
-          p_phone: phone,
-          p_step: null,
-          p_user_data_updates: {
-            reformulou_trabalho: true,
-            history: newHistory,
-            state_fsm: 'AWAITING_CURRENT_CONTRIBUTION'
-          }
-        });
+        user_data.history = newHistory;
+        user_data.state_fsm = 'AWAITING_CURRENT_CONTRIBUTION';
+        await saveSession(null, user_data);
         return reply;
       }
     }
@@ -1388,15 +1402,9 @@ JSON de retorno:`;
       const reply = "Você já tem um advogado te ajudando?";
       const newHistory = [...history, { role: 'user', content: text }, { role: 'assistant', content: reply }];
       
-      await this.supabase.rpc('save_session_data', {
-        p_phone: phone,
-        p_step: 'welcome',
-        p_user_data_updates: { 
-          has_lawyer: null,
-          history: newHistory,
-          state_fsm: 'AWAITING_LAWYER'
-        }
-      });
+      user_data.history = newHistory;
+      user_data.state_fsm = 'AWAITING_LAWYER';
+      await saveSession('welcome', user_data);
       return reply;
     }
 
@@ -1432,17 +1440,10 @@ JSON de retorno:`;
       const finalReply = "Com base no que você me contou nossa equipe vai analisar melhor o seu caso. Assim que possível entraremos em contato novamente";
       const newHistory = [...history, { role: 'user', content: text }, { role: 'assistant', content: finalReply }];
       
-      const updates = {
-        history: newHistory,
-        state_fsm: 'FINISHED',
-        triagem_encerrada_msg_enviada: true
-      };
-
-      await this.supabase.rpc('save_session_data', {
-        p_phone: phone,
-        p_step: 'finished',
-        p_user_data_updates: updates
-      });
+      user_data.history = newHistory;
+      user_data.state_fsm = 'FINISHED';
+      user_data.triagem_encerrada_msg_enviada = true;
+      await saveSession('finished', user_data);
 
       console.log(`[INSTRUMENTAÇÃO] [${new Date().toISOString()}] [Lead: ${phone}] 9. Resposta final enviada ao cliente (FSM FINISHED): "${finalReply}"`);
       return finalReply;
@@ -1466,17 +1467,10 @@ JSON de retorno:`;
 
       const newHistory = [...history, { role: 'user', content: text }, { role: 'assistant', content: reply }];
       
-      const updates = {
-        history: newHistory,
-        state_fsm: 'AWAITING_AGE',
-        score_total: calcularScorePrevidenciario(user_data)
-      };
-
-      await this.supabase.rpc('save_session_data', {
-        p_phone: phone,
-        p_step: 'welcome',
-        p_user_data_updates: updates
-      });
+      user_data.history = newHistory;
+      user_data.state_fsm = 'AWAITING_AGE';
+      user_data.score_total = calcularScorePrevidenciario(user_data);
+      await saveSession('welcome', user_data);
 
       console.log(`[INSTRUMENTAÇÃO] [${new Date().toISOString()}] [Lead: ${phone}] 9. Resposta do sub-fluxo de advogado enviada (bypassing LLM): "${reply}"`);
       return reply;
@@ -1494,17 +1488,13 @@ JSON de retorno:`;
             state_fsm: 'AWAITING_LAWYER'
         };
         
-        await this.supabase.rpc('save_session_data', {
-            p_phone: phone,
-            p_step: null,
-            p_user_data_updates: updates
-        });
-        
-        // Atualiza variáveis locais para que a chamada da IA prossiga com os dados salvos
         user_data.history = newHistory;
-        history = newHistory;
         user_data.nome_usuario = nome;
         user_data.state_fsm = 'AWAITING_LAWYER';
+        await saveSession(null, user_data);
+
+        // Atualiza variáveis locais para que a chamada da IA prossiga com os dados salvos
+        history = newHistory;
     }
 
     // Checagem prioritária para estados binários com negação clara antes do soft-guard de off-topic/FSM
@@ -1525,11 +1515,7 @@ JSON de retorno:`;
         user_data.is_off_topic = false;
 
         // Save to db
-        await this.supabase.rpc('save_session_data', {
-          p_phone: phone,
-          p_step: null,
-          p_user_data_updates: user_data
-        });
+        await saveSession(null, user_data);
 
         // Recalculate FSM state and score since we modified user_data
         resolved = this.resolveFSMState(user_data);
@@ -1556,17 +1542,11 @@ JSON de retorno:`;
         is_off_topic: null
       };
 
-      await this.supabase.rpc('save_session_data', {
-        p_phone: phone,
-        p_step: null,
-        p_user_data_updates: updates
-      });
-
-      // Atualiza variáveis locais para que a chamada do Gemini processe o histórico correto
       user_data.history = newHistory;
-      history = newHistory;
       user_data.contexto_offtopic = true;
       user_data.is_off_topic = null;
+      await saveSession(null, user_data);
+      history = newHistory;
     }
     const knownData: string[] = [];
     const ignoreKeys = ['history', 'state_fsm', 'fluxo_ativo', 'score_total', 'status_final', 'db_created_at', 'db_updated_at', 'sofrimento_relatado', 'unconfirmed_fields'];
@@ -1811,6 +1791,27 @@ JSON de retorno:`;
     */
 
     if (stateFsm === 'AWAITING_DISABILITY') {
+      const fieldCountKey = 'tentativas_AWAITING_DISABILITY';
+      user_data[fieldCountKey] = (user_data[fieldCountKey] || 0) + 1;
+      
+      console.log(`[INSTRUMENTAÇÃO] [${new Date().toISOString()}] [Lead: ${phone}] [FALLBACK_LOG] ℹ️ Pergunta do estado AWAITING_DISABILITY repetida pela ${user_data[fieldCountKey]}ª vez.`);
+      
+      if (user_data[fieldCountKey] >= 2) {
+        console.log(`[INSTRUMENTAÇÃO] [${new Date().toISOString()}] [Lead: ${phone}] [FALLBACK_TRIGGERED] { state: "AWAITING_DISABILITY", reason: "attempts_exceeded" }`);
+        this.forceFieldFallback('AWAITING_DISABILITY', user_data);
+        user_data[fieldCountKey] = null;
+        
+        // Recalcula o estado após o fallback forçado
+        resolved = this.resolveFSMState(user_data);
+        stateFsm = resolved.state;
+        if (resolved.fluxo_ativo) {
+          user_data.fluxo_ativo = resolved.fluxo_ativo;
+        }
+        user_data.state_fsm = stateFsm;
+      }
+    }
+
+    if (stateFsm === 'AWAITING_DISABILITY') {
       let selectedQuestion = familiar 
         ? `O seu ${familiar} tem alguma deficiência física, visual, auditiva ou motora?`
         : "Você tem alguma deficiência física, visual, auditiva ou motora?";
@@ -1860,11 +1861,9 @@ JSON de retorno:`;
         state_fsm: 'AWAITING_DISABILITY'
       };
 
-      await this.supabase.rpc('save_session_data', {
-        p_phone: phone,
-        p_step: this.mapFsmToStep('AWAITING_DISABILITY'),
-        p_user_data_updates: updates
-      });
+      user_data.history = newHistory;
+      user_data.state_fsm = 'AWAITING_DISABILITY';
+      await saveSession(this.mapFsmToStep('AWAITING_DISABILITY'), user_data);
 
       console.log(`[INSTRUMENTAÇÃO] [${new Date().toISOString()}] [Lead: ${phone}] 9. Resposta do sub-fluxo de deficiência enviada (bypassing LLM): "${reply}"`);
       return reply;
@@ -2213,27 +2212,7 @@ Gere a resposta da Lara (retorne APENAS o texto reescrito da pergunta base, sem 
         updates.triagem_encerrada_msg_enviada = true;
       }
 
-      console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 6. Payload enviado ao Supabase (fim-AI): step="${this.mapFsmToStep(finalState)}", updates=${JSON.stringify(updates)}`);
-
-      const { data: newMergedData, error } = await this.supabase.rpc('save_session_data', {
-        p_phone: phone,
-        p_step: this.mapFsmToStep(finalState),
-        p_user_data_updates: updates
-      });
-
-      if (error) {
-        console.error(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 7. Falha na persistência (fim-AI): ${JSON.stringify(error)}`);
-        console.error('=== ERRO CRÍTICO NO BANCO ===');
-        console.error(error);
-      } else {
-        console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 7. Confirmação de persistência bem-sucedida (fim-AI). Data retornado: ${JSON.stringify(newMergedData)}`);
-        if (newMergedData) {
-          session.user_data = newMergedData;
-        }
-      }
-
-      const { data: reReadSession } = await this.supabase.from('sofia_sessions').select('*').eq('phone', phone).single();
-      console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 8. Estado relido após save (fim-AI): FSM="${reReadSession?.user_data?.state_fsm}", step="${reReadSession?.step}", user_data=${JSON.stringify(reReadSession?.user_data)}`);
+      await saveSession(this.mapFsmToStep(finalState), updates);
 
       console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 9. Resposta final enviada ao cliente: "${finalReply}"`);
       return finalReply;
