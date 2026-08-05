@@ -75,6 +75,26 @@ const STATE_QUESTIONS: Record<string, string[]> = {
   ]
 };
 
+const STATE_FALLBACK_FIELDS: Record<string, { field: string, value: any }> = {
+  'AWAITING_NAME': { field: 'nome_usuario', value: 'amigo(a)' },
+  'AWAITING_LAWYER': { field: 'has_lawyer', value: false },
+  'LAWYER_CHECK_ACTION': { field: 'lawyer_has_action', value: 'nenhuma' },
+  'LAWYER_CHECK_CONTRACT': { field: 'lawyer_has_contract', value: false },
+  'LAWYER_CHECK_PROCURACAO': { field: 'lawyer_has_procuracao', value: false },
+  'AWAITING_AGE': { field: 'idade', value: 40 },
+  'AWAITING_TOTAL_CONTRIBUTION': { field: 'inss_tempo_carteira', value: 'nenhum' },
+  'AWAITING_CURRENT_CONTRIBUTION': { field: 'esta_contribuindo_atualmente', value: false },
+  'AWAITING_LAST_CONTRIBUTION_TIME': { field: 'tempo_parou_contribuir', value: 'nunca' },
+  'AWAITING_DISEASE': { field: 'tem_doenca_ou_limitacao', value: false },
+  'AWAITING_DISABILITY': { field: 'tem_deficiencia', value: false },
+  'BPC_AWAITING_HOUSEHOLD': { field: 'bpc_pessoas_casa', value: '1 pessoa' },
+  'BPC_AWAITING_HOUSEHOLD_INCOME': { field: 'bpc_renda_familiar', value: 0 },
+  'BPC_AWAITING_HOME_STATUS': { field: 'bpc_casa_alugada_propria', value: 'própria' },
+  'BPC_AWAITING_CADUNICO': { field: 'bpc_cad_unico', value: false },
+  'INSS_AWAITING_EMPLOYMENT_TYPE': { field: 'inss_como_contribuiu', value: 'autônomo' },
+  'INSS_AWAITING_LAST_CONTRIBUTION': { field: 'inss_afastado_ou_trabalhando', value: 'trabalhando' }
+};
+
 const EXCECAO_QUESTIONS = [
   "Obrigado pelas respostas! Como você informou que não possui doença e não sofreu acidente, gostaria que me explicasse melhor sua situação. Qual é a sua dúvida ou em que podemos ajudá-lo? Enquanto isso, já siga nosso perfil no Instagram @monicalucioli",
   "Agradeço por responder! Como você me disse que não tem doenças ou sequelas de acidentes, como podemos te ajudar hoje? Me conta qual é a sua dúvida. Aproveite e nos siga no Instagram @monicalucioli",
@@ -224,6 +244,36 @@ export class SofiaEngine {
 
   private isValidName(text: string): boolean {
     return this.extrairNomePorCodigo(text) !== null;
+  }
+
+  removerEcoDeMensagem(userText: string, laraText: string): string {
+    const normalize = (t: string) => t.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^\w]/g, "").replace(/\s+/g, "");
+    const normLara = normalize(laraText);
+    const normUser = normalize(userText);
+
+    if (normLara && normUser.includes(normLara)) {
+      const cleanUser = userText.trim();
+      const cleanLara = laraText.trim();
+      if (cleanUser.toLowerCase().includes(cleanLara.toLowerCase())) {
+        const regex = new RegExp(this.escapeRegExp(cleanLara), 'gi');
+        return cleanUser.replace(regex, '').trim();
+      }
+      
+      const laraLines = laraText.split('\n').map(l => l.trim()).filter(l => l.length > 5);
+      let updatedUser = userText;
+      for (const line of laraLines) {
+        if (updatedUser.toLowerCase().includes(line.toLowerCase())) {
+          const regex = new RegExp(this.escapeRegExp(line), 'gi');
+          updatedUser = updatedUser.replace(regex, '');
+        }
+      }
+      return updatedUser.trim();
+    }
+    return userText;
+  }
+
+  private escapeRegExp(string: string) {
+    return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   }
 
   sanitizeExtractedData(mergedData: any, text: string, currentState?: string): any {
@@ -497,6 +547,10 @@ export class SofiaEngine {
 
   limparEcoPerguntas(text: string, lastBotMessage?: string): string {
     let cleanText = text;
+    
+    if (lastBotMessage) {
+      cleanText = this.removerEcoDeMensagem(cleanText, lastBotMessage);
+    }
     
     // 1. Remoção direta de linhas que são cópias exatas da última mensagem do bot
     if (lastBotMessage) {
@@ -1016,6 +1070,25 @@ JSON de retorno:`;
     let { data: session } = await this.supabase.from('sofia_sessions').select('*').eq('phone', phone).single();
     dbTotalMs += (Date.now() - dbReadStart);
 
+    // 0.1 REMOVER ECO DE MENSAGENS (Pergunta anterior da Lara)
+    if (session && session.user_data?.history) {
+      const history = session.user_data.history;
+      let lastLaraMessage = '';
+      for (let i = history.length - 1; i >= 0; i--) {
+        if (history[i].role === 'assistant') {
+          lastLaraMessage = history[i].content;
+          break;
+        }
+      }
+      if (lastLaraMessage) {
+        const textAntes = text;
+        text = this.removerEcoDeMensagem(text, lastLaraMessage);
+        if (text !== textAntes) {
+          console.log(`[ECO DETECTADO] Eco da pergunta anterior da Lara removido de "${textAntes}" -> "${text}"`);
+        }
+      }
+    }
+
     let lastBotMessage = '';
     if (session && session.user_data?.history) {
       const history = session.user_data.history;
@@ -1391,6 +1464,33 @@ JSON de retorno:`;
       user_data.fluxo_ativo = resolved.fluxo_ativo;
     }
     user_data.state_fsm = stateFsm;
+
+    // BLOQUEIO DE PERGUNTAS DUPLICADAS CONSECUTIVAS:
+    // Se a pergunta seca do estado atual for idêntica à última pergunta registrada como enviada,
+    // força o preenchimento do campo de fallback daquele estado para forçar o FSM a avançar para o próximo estado.
+    let duplicateLoopCount = 0;
+    while (
+      stateFsm && 
+      stateFsm !== 'FINISHED' && 
+      user_data.ultima_pergunta_lara && 
+      STATE_QUESTIONS[stateFsm]?.[0] === user_data.ultima_pergunta_lara && 
+      duplicateLoopCount < 5
+    ) {
+      console.log(`⚠️ [DUPLICATE BLOCKED] Tentativa de repetir a pergunta: "${user_data.ultima_pergunta_lara}" para o estado "${stateFsm}". Forçando avanço do fluxo.`);
+      const fallback = STATE_FALLBACK_FIELDS[stateFsm];
+      if (fallback) {
+        user_data[fallback.field] = fallback.value;
+      } else {
+        break; // Segurança caso o estado não tenha fallback definido
+      }
+      resolved = this.resolveFSMState(user_data);
+      stateFsm = resolved.state;
+      if (resolved.fluxo_ativo) {
+        user_data.fluxo_ativo = resolved.fluxo_ativo;
+      }
+      user_data.state_fsm = stateFsm;
+      duplicateLoopCount++;
+    }
 
     // INTERCEPT DE CONFUSÃO/DÚVIDA PARA PERGUNTA DE ADVOGADO (Garante tom simples e evita loops)
     const cleanText = text.toLowerCase()
@@ -2240,7 +2340,8 @@ Gere a resposta da Lara (retorne APENAS o texto reescrito da pergunta base, sem 
         history: newHistory,
         state_fsm: finalState,
         fluxo_ativo: finalFluxo,
-        score_total: score_percent
+        score_total: score_percent,
+        ultima_pergunta_lara: dryQuestion
       };
 
       if (user_data.sofrimento_relatado === undefined || user_data.sofrimento_relatado === null) {
