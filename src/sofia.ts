@@ -451,9 +451,23 @@ export class SofiaEngine {
     }
 
     // 4. Name validation
-    if (mergedData.nome_usuario && !this.isValidName(mergedData.nome_usuario)) {
-      console.log(`⚠️ Nome pré-extraído/IA "${mergedData.nome_usuario}" rejeitado pelas regras de validação.`);
-      delete mergedData.nome_usuario;
+    if (mergedData.nome_usuario) {
+      const nomeNormalizado = mergedData.nome_usuario.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+      const NOMES_PROIBIDOS = ['lara', 'monica', 'mônica', 'lucioli', 'dra', 'doutora'];
+      
+      const isProibido = NOMES_PROIBIDOS.some(p => {
+        const pNorm = p.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+        return nomeNormalizado === pNorm || nomeNormalizado.includes(pNorm);
+      });
+
+      if (isProibido) {
+        console.log(`⚠️ Nome proibido detectado: "${mergedData.nome_usuario}". Rejeitando.`);
+        delete mergedData.nome_usuario;
+        mergedData.nome_proibido_rejeitado = true;
+      } else if (!this.isValidName(mergedData.nome_usuario)) {
+        console.log(`⚠️ Nome pré-extraído/IA "${mergedData.nome_usuario}" rejeitado pelas regras de validação.`);
+        delete mergedData.nome_usuario;
+      }
     }
 
     if (currentState === 'AWAITING_TOTAL_CONTRIBUTION' || currentState === 'AWAITING_CURRENT_CONTRIBUTION') {
@@ -1490,6 +1504,23 @@ JSON de retorno:`;
       }
       user_data.state_fsm = stateFsm;
       duplicateLoopCount++;
+    }
+
+    if (stateFsm === 'AWAITING_NAME' && user_data.nome_proibido_rejeitado) {
+      const reply = "Que coincidência! Pode me dizer seu nome completo?";
+      delete user_data.nome_proibido_rejeitado;
+      
+      const newHistory = [...history, { role: 'user', content: text }, { role: 'assistant', content: reply }];
+      const updates = {
+        ...user_data,
+        history: newHistory,
+        state_fsm: 'AWAITING_NAME',
+        ultima_pergunta_lara: "Me fale seu nome por favor"
+      };
+
+      await saveSession(this.mapFsmToStep('AWAITING_NAME'), updates);
+      console.log(`[INSTRUMENTAÇÃO] [${new Date().toISOString()}] [Lead: ${phone}] 9. Resposta de nome proibido enviada (bypassing LLM): "${reply}"`);
+      return reply;
     }
 
     // INTERCEPT DE CONFUSÃO/DÚVIDA PARA PERGUNTA DE ADVOGADO (Garante tom simples e evita loops)

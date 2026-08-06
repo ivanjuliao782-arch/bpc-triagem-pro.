@@ -63,6 +63,30 @@ async function runUnitTests() {
     }
   }
   console.log('✅ Todos os testes de deficiência passaram!');
+
+  // --- 3. TESTES DE NOMES PROIBIDOS ---
+  console.log('\n--- 3. Testes de Nomes Proibidos ---');
+  const forbiddenInputs = [
+    { input: { nome_usuario: "Lara" }, expectedProibido: true },
+    { input: { nome_usuario: "Mônica" }, expectedProibido: true },
+    { input: { nome_usuario: "Monica Lucioli" }, expectedProibido: true },
+    { input: { nome_usuario: "Dra Mônica" }, expectedProibido: true },
+    { input: { nome_usuario: "Maria" }, expectedProibido: false }
+  ];
+
+  for (const t of forbiddenInputs) {
+    const payload = { ...t.input };
+    const sanitized = sofia.sanitizeExtractedData(payload, payload.nome_usuario, 'AWAITING_NAME');
+    console.log(`Nome: "${t.input.nome_usuario}" -> nome_usuario restou: "${sanitized.nome_usuario}", nome_proibido_rejeitado: ${sanitized.nome_proibido_rejeitado}`);
+    if (t.expectedProibido) {
+      assert(sanitized.nome_usuario === undefined, `Deveria ter deletado o nome_usuario`);
+      assert(sanitized.nome_proibido_rejeitado === true, `Deveria ter setado nome_proibido_rejeitado como true`);
+    } else {
+      assert(sanitized.nome_usuario !== undefined, `Não deveria ter deletado o nome_usuario`);
+      assert(sanitized.nome_proibido_rejeitado === undefined, `Não deveria ter setado nome_proibido_rejeitado`);
+    }
+  }
+  console.log('✅ Todos os testes de nomes proibidos passaram!');
 }
 
 runUnitTests().catch(err => {
