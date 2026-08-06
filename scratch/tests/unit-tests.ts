@@ -130,6 +130,31 @@ async function runUnitTests() {
     assert(tokens.art === t.expectedArt, `Familiar "${t.input}": esperado art "${t.expectedArt}", obtido "${tokens.art}"`);
   }
   console.log('✅ Todos os testes de concordância de gênero passaram!');
+
+  // --- 6. TESTES DE RESPOSTA DE ADVOGADO AMBÍGUA ---
+  console.log('\n--- 6. Testes de Resposta de Advogado Ambígua ---');
+  const ambiguousInputs = [
+    { text: "chamei ele", expectedAmbiguo: true },
+    { text: "to vendo", expectedAmbiguo: true },
+    { text: "talvez", expectedAmbiguo: true },
+    { text: "não sei", expectedAmbiguo: true },
+    { text: "acho que sim", expectedAmbiguo: true },
+    { text: "não", expectedAmbiguo: false },
+    { text: "sim", expectedAmbiguo: false }
+  ];
+
+  for (const t of ambiguousInputs) {
+    const payload = { has_lawyer: false };
+    const sanitized = sofia.sanitizeExtractedData(payload, t.text, 'AWAITING_LAWYER');
+    console.log(`Input: "${t.text}" -> advogado_ambiguo_detectado: ${sanitized.advogado_ambiguo_detectado}`);
+    if (t.expectedAmbiguo) {
+      assert(sanitized.has_lawyer === undefined, `Deveria ter removido has_lawyer`);
+      assert(sanitized.advogado_ambiguo_detectado === true, `Deveria ter setado advogado_ambiguo_detectado como true`);
+    } else {
+      assert(sanitized.advogado_ambiguo_detectado === undefined, `Não deveria ter setado advogado_ambiguo_detectado`);
+    }
+  }
+  console.log('✅ Todos os testes de advogado ambíguo passaram!');
 }
 
 runUnitTests().catch(err => {

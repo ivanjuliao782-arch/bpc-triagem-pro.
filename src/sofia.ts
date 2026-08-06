@@ -520,6 +520,17 @@ export class SofiaEngine {
       }
     }
 
+    if (currentState === 'AWAITING_LAWYER') {
+      const cleanAmb = text.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^\w\s]/g, "").trim();
+      const isAmbiguousLawyer = /\b(chamei ele|to vendo|talvez|nao sei|acho que sim|acho que nao|nao tenho certeza|pode ser|quem sabe)\b/i.test(cleanAmb) ||
+                                (cleanAmb.includes("chamei") || cleanAmb.includes("vendo") || cleanAmb.includes("talvez") || cleanAmb.includes("nao sei") || cleanAmb.includes("acho que"));
+      if (isAmbiguousLawyer) {
+        console.log(`⚠️ Resposta de advogado ambígua detectada: "${text}". Marcando flag.`);
+        delete mergedData.has_lawyer;
+        mergedData.advogado_ambiguo_detectado = true;
+      }
+    }
+
     return mergedData;
   }
 
@@ -1144,6 +1155,53 @@ JSON de retorno:`;
 
     console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 1. Mensagem recebida sanitizada: "${text}"`);
 
+    // 0.2 GUARD DE PENSÃO POR MORTE
+    const cleanRej = text.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+    const mentionsPensao = /\bpensao\b/i.test(cleanRej);
+    const mentionsMaridoFalecido = /marido falecido/i.test(cleanRej);
+    const mentionsEsposaFalecida = /esposa falecida/i.test(cleanRej);
+    const mentionsFaleceuAndPensao = /\bfaleceu\b/i.test(cleanRej) && /\bpensao\b/i.test(cleanRej);
+    
+    const isPensaoRejection = mentionsPensao || mentionsMaridoFalecido || mentionsEsposaFalecida || mentionsFaleceuAndPensao;
+
+    if (isPensaoRejection) {
+      console.log(`[PENSÃO POR MORTE DETECTADA] Rejeitando lead pelo número ${phone}`);
+      const finalReply = 'Entendo sua situação. Infelizmente nosso escritório não atua com pensão por morte. Para esse tipo de caso, recomendo buscar orientação em outro escritório especializado. Nosso escritório agradece o seu contato. Boa sorte!';
+      
+      const currentSessionData = session?.user_data || {};
+      const updates = { 
+        ...currentSessionData, 
+        status_final: 'pensao_por_morte', 
+        score_total: 0,
+        state_fsm: 'FINISHED',
+        history: [
+          ...(currentSessionData.history || []),
+          { role: 'user', content: text },
+          { role: 'assistant', content: finalReply }
+        ]
+      };
+
+      await saveSession('finished', updates);
+
+      let success = true;
+      if (sendMessageCallback) {
+        success = await sendMessageCallback(finalReply);
+        if (success) {
+          const timestamp = new Date().toISOString();
+          console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] [FSM TRANSACTION] 💾 Gravando encerramento de pensão por morte pós-envio confirmado.`);
+          await this.supabase.rpc('save_session_data', {
+            p_phone: phone,
+            p_step: 'finished',
+            p_user_data_updates: updates
+          });
+        }
+      }
+
+      const totalDuration = Date.now() - tStart;
+      console.log(`[TURN_DURATION]\nphone=${phone}\nduration_ms=${totalDuration}\nextraction_ms=0\nllm_ms=0\ndb_ms=${dbTotalMs}\nsend_ms=0`);
+      return finalReply;
+    }
+
     const isGreeting = this.isSimpleGreeting(text);
     console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 2. Estado atual carregado: FSM="${session?.user_data?.state_fsm || 'N/A'}", Step="${session?.step || 'N/A'}"`);
 
@@ -1578,6 +1636,29 @@ JSON de retorno:`;
 
       await saveSession(this.mapFsmToStep('AWAITING_NAME'), updates);
       console.log(`[INSTRUMENTAÇÃO] [${new Date().toISOString()}] [Lead: ${phone}] 9. Resposta de nome inválido enviada (bypassing LLM): "${reply}"`);
+      return reply;
+    }
+
+    if (stateFsm === 'AWAITING_LAWYER' && user_data.advogado_ambiguo_detectado && !user_data.perguntou_advogado_simplificado) {
+      const familiar = user_data.beneficiario_terceiro;
+      const { art } = familiar ? this.getBeneficiaryGenderTokens(familiar) : { art: "Você" };
+      const reply = familiar ? 
+        `${art} ${familiar} já tem advogado cuidando do caso? Sim ou não?` : 
+        "Você já tem advogado cuidando do seu caso? Sim ou não?";
+
+      delete user_data.advogado_ambiguo_detectado;
+      user_data.perguntou_advogado_simplificado = true;
+
+      const newHistory = [...history, { role: 'user', content: text }, { role: 'assistant', content: reply }];
+      const updates = {
+        ...user_data,
+        history: newHistory,
+        state_fsm: 'AWAITING_LAWYER',
+        ultima_pergunta_lara: reply
+      };
+
+      await saveSession(this.mapFsmToStep('AWAITING_LAWYER'), updates);
+      console.log(`[INSTRUMENTAÇÃO] [${new Date().toISOString()}] [Lead: ${phone}] 9. Pergunta simplificada de advogado enviada (bypassing LLM): "${reply}"`);
       return reply;
     }
 
