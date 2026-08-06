@@ -87,6 +87,49 @@ async function runUnitTests() {
     }
   }
   console.log('✅ Todos os testes de nomes proibidos passaram!');
+
+  // --- 4. TESTES DE NOMES INVÁLIDOS (CONFIRMAÇÕES ETC) ---
+  console.log('\n--- 4. Testes de Nomes Inválidos (Confirmações) ---');
+  const invalidInputs = [
+    { input: { nome_usuario: "sim" }, expectedInvalido: true },
+    { input: { nome_usuario: "correto" }, expectedInvalido: true },
+    { input: { nome_usuario: "ok" }, expectedInvalido: true },
+    { input: { nome_usuario: "123" }, expectedInvalido: true },
+    { input: { nome_usuario: "Roberto" }, expectedInvalido: false }
+  ];
+
+  for (const t of invalidInputs) {
+    const payload = { ...t.input };
+    const sanitized = sofia.sanitizeExtractedData(payload, payload.nome_usuario, 'AWAITING_NAME');
+    console.log(`Nome: "${t.input.nome_usuario}" -> nome_usuario restou: "${sanitized.nome_usuario}", nome_invalido_rejeitado: ${sanitized.nome_invalido_rejeitado}`);
+    if (t.expectedInvalido) {
+      assert(sanitized.nome_usuario === undefined, `Deveria ter deletado o nome_usuario`);
+      assert(sanitized.nome_invalido_rejeitado === true, `Deveria ter setado nome_invalido_rejeitado como true`);
+    } else {
+      assert(sanitized.nome_usuario !== undefined, `Não deveria ter deletado o nome_usuario`);
+      assert(sanitized.nome_invalido_rejeitado === undefined, `Não deveria ter setado nome_invalido_rejeitado`);
+    }
+  }
+  console.log('✅ Todos os testes de nomes inválidos passaram!');
+
+  // --- 5. TESTES DE CONCORDÂNCIA DE GÊNERO ---
+  console.log('\n--- 5. Testes de Concordância de Gênero ---');
+  const genderTests = [
+    { input: "mãe", expectedPrepArt: "pela sua", expectedArt: "A sua" },
+    { input: "filha", expectedPrepArt: "pela sua", expectedArt: "A sua" },
+    { input: "pai", expectedPrepArt: "pelo seu", expectedArt: "O seu" },
+    { input: "filho", expectedPrepArt: "pelo seu", expectedArt: "O seu" },
+    { input: "esposa", expectedPrepArt: "pela sua", expectedArt: "A sua" },
+    { input: "marido", expectedPrepArt: "pelo seu", expectedArt: "O seu" }
+  ];
+
+  for (const t of genderTests) {
+    const tokens = sofia.getBeneficiaryGenderTokens(t.input);
+    console.log(`Familiar: "${t.input}" -> art: "${tokens.art}", prepArt: "${tokens.prepArt}"`);
+    assert(tokens.prepArt === t.expectedPrepArt, `Familiar "${t.input}": esperado prepArt "${t.expectedPrepArt}", obtido "${tokens.prepArt}"`);
+    assert(tokens.art === t.expectedArt, `Familiar "${t.input}": esperado art "${t.expectedArt}", obtido "${tokens.art}"`);
+  }
+  console.log('✅ Todos os testes de concordância de gênero passaram!');
 }
 
 runUnitTests().catch(err => {

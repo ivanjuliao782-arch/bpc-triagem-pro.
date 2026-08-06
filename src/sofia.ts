@@ -276,6 +276,21 @@ export class SofiaEngine {
     return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   }
 
+  getBeneficiaryGenderTokens(familiar: string): { art: string, artLC: string, prep: string, pron: string, pronPoss: string, prepArt: string } {
+    const fam = familiar.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+    const femWords = ['filha', 'esposa', 'mae', 'neta', 'irma', 'avo', 'tia', 'sogra', 'sobrinha', 'nora', 'enteada', 'companheira'];
+    const isFem = femWords.includes(fam);
+
+    return {
+      art: isFem ? 'A sua' : 'O seu',
+      artLC: isFem ? 'sua' : 'seu',
+      prep: isFem ? 'da' : 'do',
+      pron: isFem ? 'ela' : 'ele',
+      pronPoss: isFem ? 'dela' : 'dele',
+      prepArt: isFem ? 'pela sua' : 'pelo seu'
+    };
+  }
+
   sanitizeExtractedData(mergedData: any, text: string, currentState?: string): any {
     const lowerText = text.toLowerCase().trim();
     const cleanText = text.toLowerCase()
@@ -454,8 +469,14 @@ export class SofiaEngine {
     if (mergedData.nome_usuario) {
       const nomeNormalizado = mergedData.nome_usuario.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
       const NOMES_PROIBIDOS = ['lara', 'monica', 'mônica', 'lucioli', 'dra', 'doutora'];
+      const NOMES_INVALIDOS = ['correto', 'sim', 'certo', 'exato', 'isso', 'e isso', 'é isso', 'verdade', 'ok', 'okay', 'tá', 'ta', 'blz', 'beleza', 'claro'];
       
       const isProibido = NOMES_PROIBIDOS.some(p => {
+        const pNorm = p.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+        return nomeNormalizado === pNorm || nomeNormalizado.includes(pNorm);
+      });
+
+      const isInvalido = NOMES_INVALIDOS.some(p => {
         const pNorm = p.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
         return nomeNormalizado === pNorm || nomeNormalizado.includes(pNorm);
       });
@@ -464,9 +485,14 @@ export class SofiaEngine {
         console.log(`⚠️ Nome proibido detectado: "${mergedData.nome_usuario}". Rejeitando.`);
         delete mergedData.nome_usuario;
         mergedData.nome_proibido_rejeitado = true;
+      } else if (isInvalido) {
+        console.log(`⚠️ Nome inválido detectado (palavra de confirmação): "${mergedData.nome_usuario}". Rejeitando.`);
+        delete mergedData.nome_usuario;
+        mergedData.nome_invalido_rejeitado = true;
       } else if (!this.isValidName(mergedData.nome_usuario)) {
         console.log(`⚠️ Nome pré-extraído/IA "${mergedData.nome_usuario}" rejeitado pelas regras de validação.`);
         delete mergedData.nome_usuario;
+        mergedData.nome_invalido_rejeitado = true;
       }
     }
 
@@ -995,12 +1021,7 @@ JSON de retorno:`;
   ): Promise<string> {
     const user_data = session.user_data;
     if (user_data && user_data.beneficiario_terceiro && !user_data.confirmou_beneficiario_enviado) {
-      const familiar = String(user_data.beneficiario_terceiro).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
-      
-      const fem = ['filha', 'esposa', 'mae', 'neta', 'irma', 'avo', 'tia', 'sogra', 'sobrinha', 'nora', 'enteada', 'companheira'].includes(familiar);
-      const prep = fem ? 'da' : 'do';
-      const familiarArtigo = fem ? 'sua' : 'seu';
-      
+      const { prep, artLC: familiarArtigo } = this.getBeneficiaryGenderTokens(user_data.beneficiario_terceiro);
       const familiarCapitalized = user_data.beneficiario_terceiro.charAt(0).toUpperCase() + user_data.beneficiario_terceiro.slice(1);
       const prefixoConfirmacao = `Entendi que se trata do benefício ${prep} ${familiarArtigo} ${familiarCapitalized}. `;
       
@@ -1160,7 +1181,8 @@ JSON de retorno:`;
       if (leadSentProblemWithoutName) {
         let empatia = "Sinto muito que esteja passando por isso.";
         if (initialExtracted.beneficiario_terceiro) {
-          empatia = `Que situação difícil, sinto muito pelo seu ${initialExtracted.beneficiario_terceiro}.`;
+          const { prepArt } = this.getBeneficiaryGenderTokens(initialExtracted.beneficiario_terceiro);
+          empatia = `Que situação difícil, sinto muito ${prepArt} ${initialExtracted.beneficiario_terceiro}.`;
         } else if (initialExtracted.doenca) {
           empatia = `Sinto muito que esteja passando por essa dor.`;
         }
@@ -1168,25 +1190,44 @@ JSON de retorno:`;
       }
 
       const initialUserData: any = {
-        history: [
-          { role: 'user', content: text },
-          { role: 'assistant', content: finalReply }
-        ],
+        history: [],
         state_fsm: 'AWAITING_NAME',
         ultimo_sofrimento_com_empatia: initialExtracted.doenca || initialExtracted.sofrimento_relatado || 'inicial',
         ...initialExtracted
       };
 
       if (initialExtracted.nome_usuario) {
-        initialUserData.history = [
-          { role: 'assistant', content: defaultGreeting },
-          { role: 'user', content: text }
-        ];
         const resolvedState = this.resolveFSMState(initialUserData);
         initialUserData.state_fsm = resolvedState.state;
         if (resolvedState.fluxo_ativo) {
           initialUserData.fluxo_ativo = resolvedState.fluxo_ativo;
         }
+
+        const greeting = `${saudacao}, ${initialExtracted.nome_usuario}! Tudo bem? Me chamo Lara, sou atendente do escritório da Dra. Mônica Lucioli.`;
+        let prefixoConfirmacao = "";
+        if (initialExtracted.beneficiario_terceiro) {
+          const { prep, artLC: familiarArtigo } = this.getBeneficiaryGenderTokens(initialExtracted.beneficiario_terceiro);
+          const familiarCapitalized = initialExtracted.beneficiario_terceiro.charAt(0).toUpperCase() + initialExtracted.beneficiario_terceiro.slice(1);
+          prefixoConfirmacao = `Entendi que se trata do benefício ${prep} ${familiarArtigo} ${familiarCapitalized}. `;
+          initialUserData.confirmou_beneficiario_enviado = true;
+        }
+
+        const question = initialExtracted.beneficiario_terceiro ? 
+          `${this.getBeneficiaryGenderTokens(initialExtracted.beneficiario_terceiro).art} ${initialExtracted.beneficiario_terceiro} já tem advogado cuidando do caso?` :
+          "Você já tem advogado cuidando do caso?";
+
+        finalReply = `${greeting} ${prefixoConfirmacao}${question}`;
+        
+        initialUserData.history = [
+          { role: 'user', content: text },
+          { role: 'assistant', content: finalReply }
+        ];
+        initialUserData.ultima_pergunta_lara = question;
+      } else {
+        initialUserData.history = [
+          { role: 'user', content: text },
+          { role: 'assistant', content: finalReply }
+        ];
       }
 
       await saveSession('welcome', initialUserData);
@@ -1523,6 +1564,23 @@ JSON de retorno:`;
       return reply;
     }
 
+    if (stateFsm === 'AWAITING_NAME' && user_data.nome_invalido_rejeitado) {
+      const reply = "Não entendi seu nome. Pode me dizer como você se chama?";
+      delete user_data.nome_invalido_rejeitado;
+      
+      const newHistory = [...history, { role: 'user', content: text }, { role: 'assistant', content: reply }];
+      const updates = {
+        ...user_data,
+        history: newHistory,
+        state_fsm: 'AWAITING_NAME',
+        ultima_pergunta_lara: "Me fale seu nome por favor"
+      };
+
+      await saveSession(this.mapFsmToStep('AWAITING_NAME'), updates);
+      console.log(`[INSTRUMENTAÇÃO] [${new Date().toISOString()}] [Lead: ${phone}] 9. Resposta de nome inválido enviada (bypassing LLM): "${reply}"`);
+      return reply;
+    }
+
     // INTERCEPT DE CONFUSÃO/DÚVIDA PARA PERGUNTA DE ADVOGADO (Garante tom simples e evita loops)
     const cleanText = text.toLowerCase()
       .normalize("NFD")
@@ -1779,12 +1837,7 @@ JSON de retorno:`;
 
     const familiar = user_data.beneficiario_terceiro;
     if (familiar) {
-      const fem = ['filha', 'esposa', 'mãe', 'neta', 'irmã', 'avó', 'tia', 'sogra', 'sobrinha', 'nora', 'enteada', 'companheira'].includes(familiar.toLowerCase());
-      const art = fem ? 'A sua' : 'O seu';
-      const artLC = fem ? 'sua' : 'seu';
-      const prep = fem ? 'da' : 'do';
-      const pron = fem ? 'ela' : 'ele';
-      const pronPoss = fem ? 'dela' : 'dele';
+      const { art, artLC, prep, pron, pronPoss } = this.getBeneficiaryGenderTokens(familiar);
 
       if (stateFsm === 'AWAITING_LAWYER') {
         dryQuestion = `${art} ${familiar} já tem advogado cuidando do caso?`;
@@ -2009,7 +2062,8 @@ JSON de retorno:`;
         if (temDesesperoFinanceiro) {
           empatia = "Sinto muito por toda essa dificuldade.";
         } else if (familiar) {
-          empatia = `Que situação difícil, sinto muito pelo seu ${familiar}.`;
+          const { prepArt } = this.getBeneficiaryGenderTokens(familiar);
+          empatia = `Que situação difícil, sinto muito ${prepArt} ${familiar}.`;
         }
         selectedQuestion = `${empatia} ${selectedQuestion}`;
         user_data.ultimo_sofrimento_com_empatia = sofrimentoAtualParaComparacao || 'enviado';
@@ -2243,7 +2297,8 @@ Gere a resposta da Lara (retorne APENAS o texto reescrito da pergunta base, sem 
       if (temDesesperoFinanceiro) {
         empatia = "Sinto muito por toda essa dificuldade.";
       } else if (familiar) {
-        empatia = `Que situação difícil, sinto muito pelo seu ${familiar}.`;
+        const { prepArt } = this.getBeneficiaryGenderTokens(familiar);
+        empatia = `Que situação difícil, sinto muito ${prepArt} ${familiar}.`;
       }
 
       const cleanReply = finalReply.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
