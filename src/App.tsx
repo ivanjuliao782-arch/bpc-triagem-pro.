@@ -870,7 +870,7 @@ export default function App() {
                       
                       <div className="p-3 bg-emerald-500/[0.04] rounded-xl border border-emerald-500/10 space-y-2 text-[11px]">
                         <div className="flex justify-between"><span className="text-gray-500 font-medium">Valor Contrato:</span> <span className="text-emerald-400 font-bold">R$ {lead.valorContrato || '4.236,00'}</span></div>
-                        <div className="flex justify-between"><span className="text-gray-500 font-medium">Tipo Benefício:</span> <span className="text-gray-300 font-semibold">{lead.tipoBeneficio || 'Auxílio Acidente'}</span></div>
+                        <div className="flex justify-between"><span className="text-gray-500 font-medium">Tipo Benefício:</span> <span className="text-gray-300 font-semibold">{lead.tipoBeneficio || (lead.fluxo_ativo ? lead.fluxo_ativo.replace('_', ' ') : 'BPC/LOAS')}</span></div>
                         <div className="flex justify-between"><span className="text-gray-500 font-medium">Responsável:</span> <span className="text-gray-300 font-semibold">{lead.operador || 'SHOCKWAVE'}</span></div>
                       </div>
 
@@ -1771,6 +1771,36 @@ export default function App() {
                     <option value="fechados">Fechado (Converteu)</option>
                     <option value="perdidos">Perdido (Reprovado)</option>
                     <option value="com_advogado">Já tem Advogado</option>
+                  </select>
+                </div>
+
+                {/* Alterar Funil */}
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-bold text-gray-500 uppercase">Funil Ativo:</span>
+                  <select 
+                    value={selectedLead.fluxo_ativo || ''} 
+                    onChange={e => {
+                      const newFluxo = e.target.value || undefined;
+                      let newTipoBeneficio = undefined;
+                      if (newFluxo === 'BPC_IDOSO') newTipoBeneficio = 'BPC IDOSO';
+                      else if (newFluxo === 'BPC_DEFICIENTE') newTipoBeneficio = 'BPC Deficiente';
+                      else if (newFluxo === 'INSS_CONTRIBUTIVO') newTipoBeneficio = 'INSS CONTRIBUTIVO';
+                      else if (newFluxo === 'APOSENTADORIA') newTipoBeneficio = 'APOSENTADORIA';
+                      else if (newFluxo === 'EXCECAO') newTipoBeneficio = 'EXCECAO';
+
+                      updateLeadStatus(selectedLead.id, selectedLead.status, {
+                        fluxo_ativo: newFluxo as any,
+                        tipoBeneficio: newTipoBeneficio
+                      });
+                    }}
+                    className="bg-[#12121A] border border-gray-800 text-xs font-semibold rounded-xl px-3 py-2 outline-none cursor-pointer focus:border-violet-500/30 text-white"
+                  >
+                    <option value="">Não definido</option>
+                    <option value="BPC_IDOSO">BPC IDOSO</option>
+                    <option value="BPC_DEFICIENTE">BPC DEFICIENTE</option>
+                    <option value="INSS_CONTRIBUTIVO">INSS CONTRIBUTIVO</option>
+                    <option value="APOSENTADORIA">APOSENTADORIA</option>
+                    <option value="EXCECAO">EXCECAO</option>
                   </select>
                 </div>
 
