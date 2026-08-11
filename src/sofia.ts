@@ -75,6 +75,49 @@ const STATE_QUESTIONS: Record<string, string[]> = {
   ]
 };
 
+export const DUVIDAS_FRASES: string[] = [
+  "Como as regras do INSS têm muitos detalhes específicos, a Dra. Mônica e nossa equipe vão analisar todo o seu histórico e fazer esse cálculo exato para você assim que terminarmos essas perguntas básicas da triagem. É bem rapidinho! Para continuarmos, você...",
+  "Essas regras previdenciárias variam muito de caso pra caso, então a Dra. Mônica vai olhar seu histórico completo e te dar essa resposta exata assim que a gente terminar essas perguntas iniciais. É rápido! Pra seguir, você...",
+  "Cada situação previdenciária tem suas particularidades, por isso a Dra. Mônica vai analisar tudo com calma e te dar a resposta certa depois dessas perguntas básicas. Não demora! Continuando, você...",
+  "As regras de aposentadoria têm muitos detalhes técnicos, então a Dra. Mônica vai fazer essa análise completa do seu caso assim que terminarmos aqui. É bem rápido! Pra seguirmos, você...",
+  "Isso depende de vários fatores do seu histórico, e a Dra. Mônica vai calcular certinho pra você assim que a gente concluir essas perguntas iniciais. É rapidinho! Continuando, você...",
+  "Como o cálculo previdenciário é bem específico, a Dra. Mônica vai analisar seu caso completo e te trazer essa resposta logo que terminarmos essa parte inicial. Pra seguir, você...",
+  "Essa é uma dúvida importante, e justamente por isso a Dra. Mônica precisa ver seu histórico completo pra te dar a resposta certa. Assim que terminarmos aqui, ela cuida disso. Continuando, você...",
+  "As regras de transição têm várias nuances, então a Dra. Mônica vai estudar seu caso com atenção assim que a gente fechar essas perguntas básicas. É rápido! Pra seguirmos, você...",
+  "Isso o sistema do INSS calcula de um jeito bem específico caso a caso, e a Dra. Mônica vai fazer essa conta certinha pra você depois dessas perguntas. Não demora! Continuando, você...",
+  "Essa análise exige olhar todo o seu histórico de contribuição, e é exatamente isso que a Dra. Mônica vai fazer assim que terminarmos aqui. É rapidinho! Pra seguir, você...",
+  "Cada caso previdenciário tem suas próprias regras, então prefiro deixar essa resposta exata com a Dra. Mônica, que vai analisar tudo direitinho. Assim que terminarmos, ela cuida disso. Continuando, você...",
+  "As regras de transição da reforma têm bastante detalhe, então a Dra. Mônica vai calcular isso certinho pra você em breve. É rápido! Pra seguir, você...",
+  "Isso precisa de uma análise mais detalhada do seu histórico, que a Dra. Mônica vai fazer assim que terminarmos essas perguntas básicas da triagem. Não demora! Continuando, você...",
+  "Prefiro não arriscar um número errado — a Dra. Mônica vai olhar seu caso com cuidado e te trazer a resposta certa depois dessas perguntas iniciais. É rapidinho! Pra seguir, você...",
+  "Essa conta de regra de transição é bem técnica, então a Dra. Mônica vai fazer esse cálculo exato pra você assim que a gente concluir essa parte. Continuando, você...",
+  "O ideal é a Dra. Mônica avaliar seu histórico completo pra essa resposta sair certinha — ela faz isso assim que terminarmos essas perguntas. É rápido! Pra seguirmos, você...",
+  "Isso varia bastante de pessoa pra pessoa, então a Dra. Mônica vai analisar o seu caso específico e te dar essa resposta exata em breve. Continuando, você...",
+  "As regras do INSS pra esse tipo de situação têm muitos detalhes, e a Dra. Mônica vai considerar tudo isso na análise do seu caso. Assim que terminarmos aqui, ela cuida disso. Pra seguir, você...",
+  "Essa é uma pergunta que merece uma resposta bem calculada, e é a Dra. Mônica quem faz esse tipo de análise com precisão. Assim que a gente terminar aqui, ela vê isso. Continuando, você...",
+  "O cálculo exato depende do seu histórico completo de contribuição, que a Dra. Mônica vai analisar assim que terminarmos essas perguntas básicas. É rapidinho! Pra seguirmos, você...",
+  "Cada regra de transição tem um jeito diferente de calcular, então deixo isso com a Dra. Mônica, que vai te dar a resposta certa depois dessas perguntas. Continuando, você...",
+  "Isso o sistema previdenciário calcula considerando vários fatores do seu caso, e a Dra. Mônica faz essa análise completa. Assim que terminarmos aqui, ela cuida disso. Pra seguir, você...",
+  "Prefiro que a Dra. Mônica veja seu histórico completo antes de te dar essa resposta, pra garantir que sai certinha. Ela faz isso logo depois dessas perguntas. Continuando, você...",
+  "Essa dúvida é importante e merece uma resposta precisa — por isso a Dra. Mônica vai analisar seu caso com atenção assim que terminarmos aqui. É rápido! Pra seguirmos, você...",
+  "As regras de aposentadoria mudam bastante dependendo do seu histórico, então a Dra. Mônica vai calcular isso certinho pra você em breve. Continuando, você...",
+  "Isso precisa de uma conta bem específica que só a Dra. Mônica consegue fazer com precisão, olhando seu histórico completo. Assim que terminarmos aqui, ela vê isso. Pra seguir, você...",
+  "Cada situação de aposentadoria tem seu próprio cálculo, e a Dra. Mônica vai fazer isso certinho pra você assim que a gente concluir essas perguntas. Não demora! Continuando, você...",
+  "Essa é uma análise que exige olhar todos os detalhes do seu caso, e é exatamente isso que a Dra. Mônica vai fazer depois dessas perguntas iniciais. É rapidinho! Pra seguirmos, você...",
+  "O ideal aqui é a Dra. Mônica calcular com base no seu histórico completo, pra garantir que a resposta esteja certa. Ela faz isso assim que terminarmos. Continuando, você...",
+  "Essas regras têm muita variação de caso pra caso, então prefiro deixar essa resposta exata com a Dra. Mônica. Assim que a gente terminar aqui, ela cuida disso. Pra seguir, você...",
+  "Isso o INSS calcula de um jeito bem técnico, e é a Dra. Mônica quem tem essa expertise pra te dar a resposta certa. Ela vê isso assim que terminarmos. Continuando, você...",
+  "Prefiro ser honesta: essa conta exige análise detalhada, que a Dra. Mônica vai fazer com seu histórico completo assim que a gente concluir essas perguntas. Pra seguirmos, você...",
+  "Essa dúvida técnica é justamente o tipo de coisa que a Dra. Mônica resolve com precisão, analisando seu caso completo. Assim que terminarmos aqui, ela cuida disso. Continuando, você...",
+  "As regras do INSS pra esse tipo de situação têm muitos detalhes, e a Dra. Mônica vai considerar tudo isso na análise do seu caso. Assim que terminarmos aqui, ela cuida disso. Pra seguir, você...",
+  "Isso depende do seu histórico específico de contribuição, e a Dra. Mônica vai analisar tudo com cuidado assim que terminarmos essas perguntas. Continuando, você...",
+  "Prefiro garantir que essa resposta saia certa, então deixo com a Dra. Mônica, que vai calcular com base no seu histórico completo. Ela faz isso logo depois dessas perguntas. Pra seguirmos, você...",
+  "Essa é uma pergunta que exige cálculo técnico preciso, e é exatamente isso que a Dra. Mônica vai fazer assim que a gente terminar aqui. Não demora! Continuando, você...",
+  "O sistema previdenciário considera muitos fatores nesse tipo de cálculo, e a Dra. Mônica vai analisar o seu caso específico. Assim que terminarmos, ela cuida disso. Pra seguir, você...",
+  "Isso precisa de uma análise cuidadosa do seu histórico completo, que a Dra. Mônica vai fazer assim que a gente concluir essas perguntas básicas. É rapidinho! Continuando, você...",
+  "Essa dúvida merece uma resposta bem calculada, e é justamente esse tipo de análise que a Dra. Mônica faz com precisão. Assim que terminarmos aqui, ela cuida disso. Pra seguirmos, você..."
+];
+
 const STATE_FALLBACK_FIELDS: Record<string, { field: string, value: any }> = {
   'AWAITING_NAME': { field: 'nome_usuario', value: 'amigo(a)' },
   'AWAITING_LAWYER': { field: 'has_lawyer', value: false },
@@ -1602,6 +1645,7 @@ JSON de retorno:`;
       delete user_data.original_state_fsm;
     }
     let history = user_data?.history || [];
+    const hasDoubt = this.isQuestionOrDoubt(text);
     const saveSession = saveSessionParam || (async (s: string | null, u: any) => {
       await this.supabase.rpc('save_session_data', {
         p_phone: phone,
@@ -1621,7 +1665,8 @@ JSON de retorno:`;
     const isOffTopic = user_data?.is_off_topic === true;
     if (isOffTopic) {
       delete user_data.is_off_topic;
-      const standardRedirect = "Como cada caso tem regras bem específicas, a Dra. Mônica e nossa equipe vão analisar toda a sua situação assim que terminarmos essas perguntas rápidas. É bem rapidinho!";
+      const randomIndex = Math.floor(Math.random() * DUVIDAS_FRASES.length);
+      const standardRedirect = DUVIDAS_FRASES[randomIndex];
       
       let dryQuestion = "";
       if (resolved.fluxo_ativo === 'EXCECAO') {
@@ -2313,7 +2358,7 @@ JSON de retorno:`;
       return reply;
     }
 
-    const promptSofia = `Você é Lara, atendente humana do escritório de advocacia previdenciária da Dra. Mônica Lucioli.
+    let promptSofia = `Você é Lara, atendente humana do escritório de advocacia previdenciária da Dra. Mônica Lucioli.
 Empatia/Acolhimento de dor ou doença já demonstrado nesta conversa: ${user_data.ultimo_sofrimento_com_empatia ? "SIM (É TERMINANTEMENTE PROIBIDO repetir ou iniciar sua resposta com frases de empatia como 'sinto muito', 'que situação difícil', 'poxa', etc. Vá direto à pergunta!)" : "NÃO"}
 Você realiza a triagem de clientes via WhatsApp. Seu tom de voz deve ser 100% IDÊNTICO ao estilo real do escritório: extremamente direto, seco, prático, objetivo e muito curto nas perguntas de cadastro, mas demonstrando sentimentos humanos reais e calorosos quando o cliente relata dor, doença grave ou luto (especialmente viúvas/viúvos).
 
@@ -2361,6 +2406,10 @@ ${JSON.stringify(history.map((h: any) => ({ role: h.role, content: h.content }))
 "${text}"
 
 Gere a resposta da Lara (retorne APENAS o texto reescrito da pergunta base, sem mais nada):`;
+
+    if (hasDoubt) {
+      promptSofia += `\n\n[AVISO CRÍTICO] O cliente enviou uma dúvida ou pergunta técnica previdenciária que já foi respondida pelo sistema com uma frase padrão determinística. É TERMINANTEMENTE PROIBIDO que você tente responder à dúvida dele, comente sobre ela, faça qualquer desvio ou expresse qualquer empatia/acolhimento adicionais. Você deve ignorar a dúvida completamente e apenas reescrever a pergunta base de forma muito direta, curta e objetiva.`;
+    }
 
     console.log(`🧠 Chamando inteligência artificial (Lara Conversacional) para gerar resposta...`);
     const llmStart = Date.now();
@@ -2638,6 +2687,12 @@ Gere a resposta da Lara (retorne APENAS o texto reescrito da pergunta base, sem 
 
     const timestamp = new Date().toISOString();
     console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 5. Estado calculado pela FSM: state="${finalState}", fluxo="${finalFluxo || 'N/A'}"`);
+
+    if (hasDoubt) {
+      const randomIndex = Math.floor(Math.random() * DUVIDAS_FRASES.length);
+      const phrase = DUVIDAS_FRASES[randomIndex];
+      finalReply = `${phrase}\n\n${finalReply}`;
+    }
 
     const newHistory = [
       ...history,

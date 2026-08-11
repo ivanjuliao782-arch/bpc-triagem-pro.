@@ -1,4 +1,4 @@
-import { SofiaEngine } from '../../src/sofia';
+import { SofiaEngine, DUVIDAS_FRASES } from '../../src/sofia';
 import dotenv from 'dotenv';
 dotenv.config();
 
@@ -356,7 +356,8 @@ async function runFsmTests() {
   
   assert(savedUpdates.state_fsm === 'AWAITING_DISABILITY', "FSM deveria permanecer em AWAITING_DISABILITY");
   assert(!savedUpdates.tentativas_AWAITING_DISABILITY, "Contador de tentativas de AWAITING_DISABILITY não deveria ser incrementado para dúvidas");
-  assert(response.includes("Como cada caso tem regras bem específicas, a Dra. Mônica e nossa equipe vão analisar toda a sua situação"), "Deveria ter respondido com desvio padrão");
+  const matchedDoubt = DUVIDAS_FRASES.some(phrase => response.includes(phrase.substring(0, 30)));
+  assert(matchedDoubt, "Deveria ter respondido com desvio padrão");
   assert(response.includes("Você tem alguma deficiência?"), "Deveria ter repetido a pergunta de deficiência");
 
   // Atualiza a sessão para o Turn 2
