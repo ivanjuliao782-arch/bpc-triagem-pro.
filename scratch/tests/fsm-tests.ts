@@ -323,19 +323,27 @@ async function runFsmTests() {
     }
   };
 
+  const sessionsMap: Record<string, any> = {
+    '553298296586': mockRomildoSession
+  };
+
   savedUpdates = null;
 
   (sofia as any).supabase = {
     rpc: async (name: string, args: any) => {
       if (name === 'save_session_data') {
+        const phone = args.p_phone;
+        if (sessionsMap[phone]) {
+          sessionsMap[phone].user_data = args.p_user_data_updates;
+        }
         savedUpdates = args.p_user_data_updates;
       }
       return { data: args.p_user_data_updates, error: null };
     },
     from: () => ({
       select: () => ({
-        eq: () => ({
-          single: async () => ({ data: mockRomildoSession, error: null })
+        eq: (field: string, value: string) => ({
+          single: async () => ({ data: sessionsMap[value], error: null })
         })
       }),
       update: () => ({
@@ -407,6 +415,69 @@ async function runFsmTests() {
   assert(savedUpdates.state_fsm === 'RETIREMENT_AWAITING_SPECIAL_RURAL', "FSM deveria ter avançado para RETIREMENT_AWAITING_SPECIAL_RURAL");
 
   console.log('✅ Todos os testes de regressão de blindagem global passaram!');
+
+  // --- 7. Teste de Escalonamento e Detecção de Robô ---
+  console.log('\n--- 7. Teste de Escalonamento e Detecção de Robô ---');
+  const mockEscalationSession = {
+    phone: "553200000100",
+    step: "test_step",
+    user_data: {
+      nome_usuario: "Maria",
+      has_lawyer: false,
+      state_fsm: 'AWAITING_AGE',
+      history: []
+    }
+  };
+  sessionsMap['553200000100'] = mockEscalationSession;
+
+  const dummyCallback = async (reply: string) => true;
+
+  // 1ª Dúvida: "Consigo aposentar?"
+  console.log('Turn 1: Enviando 1ª dúvida "Consigo aposentar?"...');
+  sofia.runHybridExtraction = async (text: string, currentState?: string) => {
+    return { is_off_topic: true }; // Simula extração de off_topic pela LLM
+  };
+  let resEsc = await sofia.processMessage("553200000100", "Consigo aposentar?", dummyCallback);
+  console.log(`-> Lara Response: "${resEsc}"`);
+
+  assert(mockEscalationSession.user_data.state_fsm === 'AWAITING_AGE', "Deveria permanecer em AWAITING_AGE");
+  const matchedDoubt1 = DUVIDAS_FRASES.some(phrase => resEsc.includes(phrase.substring(0, 30)));
+  assert(matchedDoubt1, "Deveria ter respondido com desvio padrão (DUVIDAS_FRASES)");
+  assert(resEsc.includes("Qual a sua idade?"), "Deveria repetir a pergunta de idade");
+  assert((mockEscalationSession.user_data as any).duvida_state_counts['AWAITING_AGE'] === 1, "Dúvida count deveria ser 1");
+
+  // 2ª Dúvida: "Então você não sabe?"
+  console.log('Turn 2: Enviando 2ª dúvida "Então você não sabe?"...');
+  resEsc = await sofia.processMessage("553200000100", "Então você não sabe?", dummyCallback);
+  console.log(`-> Lara Response: "${resEsc}"`);
+
+  assert(mockEscalationSession.user_data.state_fsm === 'AWAITING_AGE', "Deveria permanecer em AWAITING_AGE");
+  const matchedDoubt2 = DUVIDAS_FRASES.some(phrase => resEsc.includes(phrase.substring(0, 30)));
+  assert(matchedDoubt2, "Deveria ter respondido com desvio padrão (DUVIDAS_FRASES)");
+  assert(resEsc.includes("Qual a sua idade?"), "Deveria repetir a pergunta de idade");
+  assert((mockEscalationSession.user_data as any).duvida_state_counts['AWAITING_AGE'] === 2, "Dúvida count deveria ser 2");
+
+  // 3ª Dúvida: "Como você não sabe?"
+  console.log('Turn 3: Enviando 3ª dúvida "Como você não sabe?"...');
+  resEsc = await sofia.processMessage("553200000100", "Como você não sabe?", dummyCallback);
+  console.log(`-> Lara Response: "${resEsc}"`);
+
+  assert(mockEscalationSession.user_data.state_fsm === 'AWAITING_AGE', "Deveria permanecer em AWAITING_AGE");
+  assert(resEsc.includes("Entendo sua ansiedade! Pra te dar essa resposta com segurança, preciso só de mais algumas informações — vamos continuar?"), "Deveria ter respondido com a frase de firmeza");
+  assert(resEsc.includes("Qual a sua idade?"), "Deveria repetir a pergunta de idade");
+  assert((mockEscalationSession.user_data as any).duvida_state_counts['AWAITING_AGE'] === 3, "Dúvida count deveria ser 3");
+
+  // Pergunta de Robô: "Você é um robô?"
+  console.log('Turn 4: Enviando pergunta de robô "Você é um robô?"...');
+  resEsc = await sofia.processMessage("553200000100", "Você é um robô?", dummyCallback);
+  console.log(`-> Lara Response: "${resEsc}"`);
+
+  assert(mockEscalationSession.user_data.state_fsm === 'AWAITING_AGE', "Deveria permanecer em AWAITING_AGE");
+  assert(resEsc.includes("Sou uma assistente automatizada do escritório da Dra. Mônica, aqui pra te ajudar a organizar as informações do seu caso antes dela te atender pessoalmente."), "Deveria ter respondido com a declaração de robô");
+  assert(resEsc.includes("Qual a sua idade?"), "Deveria repetir a pergunta de idade");
+  assert((mockEscalationSession.user_data as any).duvida_state_counts['AWAITING_AGE'] === 3, "Dúvida count não deveria incrementar para pergunta de robô");
+
+  console.log('✅ Teste de Escalonamento e Detecção de Robô passou com sucesso!');
 }
 
 runFsmTests().catch(err => {

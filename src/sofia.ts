@@ -76,46 +76,46 @@ const STATE_QUESTIONS: Record<string, string[]> = {
 };
 
 export const DUVIDAS_FRASES: string[] = [
-  "Como as regras do INSS têm muitos detalhes específicos, a Dra. Mônica e nossa equipe vão analisar todo o seu histórico e fazer esse cálculo exato para você assim que terminarmos essas perguntas básicas da triagem. É bem rapidinho! Para continuarmos, você...",
-  "Essas regras previdenciárias variam muito de caso pra caso, então a Dra. Mônica vai olhar seu histórico completo e te dar essa resposta exata assim que a gente terminar essas perguntas iniciais. É rápido! Pra seguir, você...",
-  "Cada situação previdenciária tem suas particularidades, por isso a Dra. Mônica vai analisar tudo com calma e te dar a resposta certa depois dessas perguntas básicas. Não demora! Continuando, você...",
-  "As regras de aposentadoria têm muitos detalhes técnicos, então a Dra. Mônica vai fazer essa análise completa do seu caso assim que terminarmos aqui. É bem rápido! Pra seguirmos, você...",
-  "Isso depende de vários fatores do seu histórico, e a Dra. Mônica vai calcular certinho pra você assim que a gente concluir essas perguntas iniciais. É rapidinho! Continuando, você...",
-  "Como o cálculo previdenciário é bem específico, a Dra. Mônica vai analisar seu caso completo e te trazer essa resposta logo que terminarmos essa parte inicial. Pra seguir, você...",
-  "Essa é uma dúvida importante, e justamente por isso a Dra. Mônica precisa ver seu histórico completo pra te dar a resposta certa. Assim que terminarmos aqui, ela cuida disso. Continuando, você...",
-  "As regras de transição têm várias nuances, então a Dra. Mônica vai estudar seu caso com atenção assim que a gente fechar essas perguntas básicas. É rápido! Pra seguirmos, você...",
-  "Isso o sistema do INSS calcula de um jeito bem específico caso a caso, e a Dra. Mônica vai fazer essa conta certinha pra você depois dessas perguntas. Não demora! Continuando, você...",
-  "Essa análise exige olhar todo o seu histórico de contribuição, e é exatamente isso que a Dra. Mônica vai fazer assim que terminarmos aqui. É rapidinho! Pra seguir, você...",
-  "Cada caso previdenciário tem suas próprias regras, então prefiro deixar essa resposta exata com a Dra. Mônica, que vai analisar tudo direitinho. Assim que terminarmos, ela cuida disso. Continuando, você...",
-  "As regras de transição da reforma têm bastante detalhe, então a Dra. Mônica vai calcular isso certinho pra você em breve. É rápido! Pra seguir, você...",
-  "Isso precisa de uma análise mais detalhada do seu histórico, que a Dra. Mônica vai fazer assim que terminarmos essas perguntas básicas da triagem. Não demora! Continuando, você...",
-  "Prefiro não arriscar um número errado — a Dra. Mônica vai olhar seu caso com cuidado e te trazer a resposta certa depois dessas perguntas iniciais. É rapidinho! Pra seguir, você...",
-  "Essa conta de regra de transição é bem técnica, então a Dra. Mônica vai fazer esse cálculo exato pra você assim que a gente concluir essa parte. Continuando, você...",
-  "O ideal é a Dra. Mônica avaliar seu histórico completo pra essa resposta sair certinha — ela faz isso assim que terminarmos essas perguntas. É rápido! Pra seguirmos, você...",
-  "Isso varia bastante de pessoa pra pessoa, então a Dra. Mônica vai analisar o seu caso específico e te dar essa resposta exata em breve. Continuando, você...",
-  "As regras do INSS pra esse tipo de situação têm muitos detalhes, e a Dra. Mônica vai considerar tudo isso na análise do seu caso. Assim que terminarmos aqui, ela cuida disso. Pra seguir, você...",
-  "Essa é uma pergunta que merece uma resposta bem calculada, e é a Dra. Mônica quem faz esse tipo de análise com precisão. Assim que a gente terminar aqui, ela vê isso. Continuando, você...",
-  "O cálculo exato depende do seu histórico completo de contribuição, que a Dra. Mônica vai analisar assim que terminarmos essas perguntas básicas. É rapidinho! Pra seguirmos, você...",
-  "Cada regra de transição tem um jeito diferente de calcular, então deixo isso com a Dra. Mônica, que vai te dar a resposta certa depois dessas perguntas. Continuando, você...",
-  "Isso o sistema previdenciário calcula considerando vários fatores do seu caso, e a Dra. Mônica faz essa análise completa. Assim que terminarmos aqui, ela cuida disso. Pra seguir, você...",
-  "Prefiro que a Dra. Mônica veja seu histórico completo antes de te dar essa resposta, pra garantir que sai certinha. Ela faz isso logo depois dessas perguntas. Continuando, você...",
-  "Essa dúvida é importante e merece uma resposta precisa — por isso a Dra. Mônica vai analisar seu caso com atenção assim que terminarmos aqui. É rápido! Pra seguirmos, você...",
-  "As regras de aposentadoria mudam bastante dependendo do seu histórico, então a Dra. Mônica vai calcular isso certinho pra você em breve. Continuando, você...",
-  "Isso precisa de uma conta bem específica que só a Dra. Mônica consegue fazer com precisão, olhando seu histórico completo. Assim que terminarmos aqui, ela vê isso. Pra seguir, você...",
-  "Cada situação de aposentadoria tem seu próprio cálculo, e a Dra. Mônica vai fazer isso certinho pra você assim que a gente concluir essas perguntas. Não demora! Continuando, você...",
-  "Essa é uma análise que exige olhar todos os detalhes do seu caso, e é exatamente isso que a Dra. Mônica vai fazer depois dessas perguntas iniciais. É rapidinho! Pra seguirmos, você...",
-  "O ideal aqui é a Dra. Mônica calcular com base no seu histórico completo, pra garantir que a resposta esteja certa. Ela faz isso assim que terminarmos. Continuando, você...",
-  "Essas regras têm muita variação de caso pra caso, então prefiro deixar essa resposta exata com a Dra. Mônica. Assim que a gente terminar aqui, ela cuida disso. Pra seguir, você...",
-  "Isso o INSS calcula de um jeito bem técnico, e é a Dra. Mônica quem tem essa expertise pra te dar a resposta certa. Ela vê isso assim que terminarmos. Continuando, você...",
-  "Prefiro ser honesta: essa conta exige análise detalhada, que a Dra. Mônica vai fazer com seu histórico completo assim que a gente concluir essas perguntas. Pra seguirmos, você...",
-  "Essa dúvida técnica é justamente o tipo de coisa que a Dra. Mônica resolve com precisão, analisando seu caso completo. Assim que terminarmos aqui, ela cuida disso. Continuando, você...",
-  "As regras do INSS pra esse tipo de situação têm muitos detalhes, e a Dra. Mônica vai considerar tudo isso na análise do seu caso. Assim que terminarmos aqui, ela cuida disso. Pra seguir, você...",
-  "Isso depende do seu histórico específico de contribuição, e a Dra. Mônica vai analisar tudo com cuidado assim que terminarmos essas perguntas. Continuando, você...",
-  "Prefiro garantir que essa resposta saia certa, então deixo com a Dra. Mônica, que vai calcular com base no seu histórico completo. Ela faz isso logo depois dessas perguntas. Pra seguirmos, você...",
-  "Essa é uma pergunta que exige cálculo técnico preciso, e é exatamente isso que a Dra. Mônica vai fazer assim que a gente terminar aqui. Não demora! Continuando, você...",
-  "O sistema previdenciário considera muitos fatores nesse tipo de cálculo, e a Dra. Mônica vai analisar o seu caso específico. Assim que terminarmos, ela cuida disso. Pra seguir, você...",
-  "Isso precisa de uma análise cuidadosa do seu histórico completo, que a Dra. Mônica vai fazer assim que a gente concluir essas perguntas básicas. É rapidinho! Continuando, você...",
-  "Essa dúvida merece uma resposta bem calculada, e é justamente esse tipo de análise que a Dra. Mônica faz com precisão. Assim que terminarmos aqui, ela cuida disso. Pra seguirmos, você..."
+  "Como as regras do INSS têm muitos detalhes específicos, a Dra. Mônica e nossa equipe vão analisar todo o seu histórico e fazer esse cálculo exato para você assim que terminarmos essas perguntas básicas da triagem. É bem rapidinho!",
+  "Essas regras previdenciárias variam muito de caso pra caso, então a Dra. Mônica vai olhar seu histórico completo e te dar essa resposta exata assim que a gente terminar essas perguntas iniciais. É rápido!",
+  "Cada situação previdenciária tem suas particularidades, por isso a Dra. Mônica vai analisar tudo com calma e te dar a resposta certa depois dessas perguntas básicas. Não demora!",
+  "As regras de aposentadoria têm muitos detalhes técnicos, então a Dra. Mônica vai fazer essa análise completa do seu caso assim que terminarmos aqui. É bem rápido!",
+  "Isso depende de vários fatores do seu histórico, e a Dra. Mônica vai calcular certinho pra você assim que a gente concluir essas perguntas iniciais. É rapidinho!",
+  "Como o cálculo previdenciário é bem específico, a Dra. Mônica vai analisar seu caso completo e te trazer essa resposta logo que terminarmos essa parte inicial.",
+  "Essa é uma dúvida importante, e justamente por isso a Dra. Mônica precisa ver seu histórico completo pra te dar a resposta certa. Assim que terminarmos aqui, ela cuida disso.",
+  "As regras de transição têm várias nuances, então a Dra. Mônica vai estudar seu caso com atenção assim que a gente fechar essas perguntas básicas. É rápido!",
+  "Isso o sistema do INSS calcula de um jeito bem específico caso a caso, e a Dra. Mônica vai fazer essa conta certinha pra você depois dessas perguntas. Não demora!",
+  "Essa análise exige olhar todo o seu histórico de contribuição, e é exatamente isso que a Dra. Mônica vai fazer assim que terminarmos aqui. É rapidinho!",
+  "Cada caso previdenciário tem suas próprias regras, então prefiro deixar essa resposta exata com a Dra. Mônica, que vai analisar tudo direitinho. Assim que terminarmos, ela cuida disso.",
+  "As regras de transição da reforma têm bastante detalhe, então a Dra. Mônica vai calcular isso certinho pra você em breve. É rápido!",
+  "Isso precisa de uma análise mais detalhada do seu histórico, que a Dra. Mônica vai fazer assim que terminarmos essas perguntas básicas da triagem. Não demora!",
+  "Prefiro não arriscar um número errado — a Dra. Mônica vai olhar seu caso com cuidado e te trazer a resposta certa depois dessas perguntas iniciais. É rapidinho!",
+  "Essa conta de regra de transição é bem técnica, então a Dra. Mônica vai fazer esse cálculo exato pra você assim que a gente concluir essa parte.",
+  "O ideal é a Dra. Mônica avaliar seu histórico completo pra essa resposta sair certinha — ela faz isso assim que terminarmos essas perguntas. É rápido!",
+  "Isso varia bastante de pessoa pra pessoa, então a Dra. Mônica vai analisar o seu caso específico e te dar essa resposta exata em breve.",
+  "As regras do INSS pra esse tipo de situação têm muitos detalhes, e a Dra. Mônica vai considerar tudo isso na análise do seu caso. Assim que terminarmos aqui, ela cuida disso.",
+  "Essa é uma pergunta que merece uma resposta bem calculada, e é a Dra. Mônica quem faz esse tipo de análise com precisão. Assim que a gente terminar aqui, ela vê isso.",
+  "O cálculo exato depende do seu histórico completo de contribuição, que a Dra. Mônica vai analisar assim que terminarmos essas perguntas básicas. É rapidinho!",
+  "Cada regra de transição tem um jeito diferente de calcular, então deixo isso com a Dra. Mônica, que vai te dar a resposta certa depois dessas perguntas.",
+  "Isso o sistema previdenciário calcula considerando vários fatores do seu caso, e a Dra. Mônica faz essa análise completa. Assim que terminarmos aqui, ela cuida disso.",
+  "Prefiro que a Dra. Mônica veja seu histórico completo antes de te dar essa resposta, pra garantir que sai certinha. Ela faz isso logo depois dessas perguntas.",
+  "Essa dúvida é importante e merece uma resposta precisa — por isso a Dra. Mônica vai analisar seu caso com atenção assim que terminarmos aqui. É rápido!",
+  "As regras de aposentadoria mudam bastante dependendo do seu histórico, então a Dra. Mônica vai calcular isso certinho pra você em breve.",
+  "Isso precisa de uma conta bem específica que só a Dra. Mônica consegue fazer com precisão, olhando seu histórico completo. Assim que terminarmos aqui, ela vê isso.",
+  "Cada situação de aposentadoria tem seu próprio cálculo, e a Dra. Mônica vai fazer isso certinho pra você assim que a gente concluir essas perguntas. Não demora!",
+  "Essa é uma análise que exige olhar todos os detalhes do seu caso, e é exatamente isso que a Dra. Mônica vai fazer depois dessas perguntas iniciais. É rapidinho!",
+  "O ideal aqui é a Dra. Mônica calcular com base no seu histórico completo, pra garantir que a resposta esteja certa. Ela faz isso assim que terminarmos.",
+  "Essas regras têm muita variação de caso pra caso, então prefiro deixar essa resposta exata com a Dra. Mônica. Assim que a gente terminar aqui, ela cuida disso.",
+  "Isso o INSS calcula de um jeito bem técnico, e é a Dra. Mônica quem tem essa expertise pra te dar a resposta certa. Ela vê isso assim que terminarmos.",
+  "Prefiro ser honesta: essa conta exige análise detalhada, que a Dra. Mônica vai fazer com seu histórico completo assim que a gente concluir essas perguntas.",
+  "Essa dúvida técnica é justamente o tipo de coisa que a Dra. Mônica resolve com precisão, analisando seu caso completo. Assim que terminarmos aqui, ela cuida disso.",
+  "As regras do INSS pra esse tipo de situação têm muitos detalhes, e a Dra. Mônica vai considerar tudo isso na análise do seu caso. É rápido!",
+  "Isso depende do seu histórico específico de contribuição, e a Dra. Mônica vai analisar tudo com cuidado assim que terminarmos essas perguntas.",
+  "Prefiro garantir que essa resposta saia certa, então deixo com a Dra. Mônica, que vai calcular com base no seu histórico completo. Ela faz isso logo depois dessas perguntas.",
+  "Essa é uma pergunta que exige cálculo técnico preciso, e é exatamente isso que a Dra. Mônica vai fazer assim que a gente terminar aqui. Não demora!",
+  "O sistema previdenciário considera muitos fatores nesse tipo de cálculo, e a Dra. Mônica vai analisar o seu caso específico. Assim que terminarmos, ela cuida disso.",
+  "Isso precisa de uma análise cuidadosa do seu histórico completo, que a Dra. Mônica vai fazer assim que a gente concluir essas perguntas básicas. É rapidinho!",
+  "Essa dúvida merece uma resposta bem calculada, e é justamente esse tipo de análise que a Dra. Mônica faz com precisão. Assim que terminarmos aqui, ela cuida disso."
 ];
 
 const STATE_FALLBACK_FIELDS: Record<string, { field: string, value: any }> = {
@@ -1662,11 +1662,30 @@ JSON de retorno:`;
     }
     user_data.state_fsm = stateFsm;
 
+    let phraseToPrepend = "";
+    if (hasDoubt || (user_data?.is_off_topic === true)) {
+      if (this.isAskingIfBot(text)) {
+        phraseToPrepend = "Sou uma assistente automatizada do escritório da Dra. Mônica, aqui pra te ajudar a organizar as informações do seu caso antes dela te atender pessoalmente.";
+      } else {
+        if (!user_data.duvida_state_counts) {
+          user_data.duvida_state_counts = {};
+        }
+        const currentCount = (user_data.duvida_state_counts[stateFsm] || 0) + 1;
+        user_data.duvida_state_counts[stateFsm] = currentCount;
+        
+        if (currentCount >= 3) {
+          phraseToPrepend = "Entendo sua ansiedade! Pra te dar essa resposta com segurança, preciso só de mais algumas informações — vamos continuar?";
+        } else {
+          const randomIndex = Math.floor(Math.random() * DUVIDAS_FRASES.length);
+          phraseToPrepend = DUVIDAS_FRASES[randomIndex];
+        }
+      }
+    }
+
     const isOffTopic = user_data?.is_off_topic === true;
     if (isOffTopic) {
       delete user_data.is_off_topic;
-      const randomIndex = Math.floor(Math.random() * DUVIDAS_FRASES.length);
-      const standardRedirect = DUVIDAS_FRASES[randomIndex];
+      const standardRedirect = phraseToPrepend;
       
       let dryQuestion = "";
       if (resolved.fluxo_ativo === 'EXCECAO') {
@@ -2688,10 +2707,8 @@ Gere a resposta da Lara (retorne APENAS o texto reescrito da pergunta base, sem 
     const timestamp = new Date().toISOString();
     console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 5. Estado calculado pela FSM: state="${finalState}", fluxo="${finalFluxo || 'N/A'}"`);
 
-    if (hasDoubt) {
-      const randomIndex = Math.floor(Math.random() * DUVIDAS_FRASES.length);
-      const phrase = DUVIDAS_FRASES[randomIndex];
-      finalReply = `${phrase}\n\n${finalReply}`;
+    if (hasDoubt && phraseToPrepend) {
+      finalReply = `${phraseToPrepend}\n\n${finalReply}`;
     }
 
     const newHistory = [
@@ -2776,7 +2793,20 @@ Gere a resposta da Lara (retorne APENAS o texto reescrito da pergunta base, sem 
     return apresentacao;
   }
 
+  isAskingIfBot(text: string): boolean {
+    const clean = text.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+    const botPatterns = [
+      /voce\s+e\s+(um\s+)?robo/i,
+      /e\s+um\s+bot/i,
+      /\be\s+ia\b/i,
+      /e\s+humano\s+de\s+verdade/i,
+      /tem\s+alguem\s+ai/i
+    ];
+    return botPatterns.some(pattern => pattern.test(clean));
+  }
+
   isQuestionOrDoubt(text: string): boolean {
+    if (this.isAskingIfBot(text)) return true;
     const clean = text.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
     if (text.includes('?')) return true;
     
