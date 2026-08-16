@@ -158,16 +158,12 @@ export default function App() {
           };
 
           const age = parseNumber(userData.idade);
-          const contributionYears = parseNumber(userData.tempo_contribuicao);
+          const contributionYears = parseNumber(userData.inss_tempo_carteira || userData.tempo_contribuicao);
           const hasAccident = userData.acidente && userData.acidente.toLowerCase() !== 'não';
           const hasDisease = userData.doenca && userData.doenca.toLowerCase() !== 'não';
 
           // --- CÁLCULO DE SCORE PREVIDENCIÁRIO AUTOMÁTICO ---
           let scoreValue = calcularScorePrevidenciario(userData);
-          
-          if (userData.state_fsm === 'FINISHED' && userData.score_total !== undefined && userData.is_recoverable !== true) {
-            scoreValue = userData.score_total;
-          }
 
           let scoreClass: ScoreClassification = 'Frio';
           if (scoreValue >= 70) scoreClass = 'Quente';
@@ -272,6 +268,11 @@ export default function App() {
         });
 
         setLeads(uniqueLeads);
+        setSelectedLead(prev => {
+          if (!prev) return null;
+          const updated = uniqueLeads.find(l => l.phone === prev.phone);
+          return updated || prev;
+        });
       }
     } catch (err) {
       console.error('Erro ao buscar leads do Supabase:', err);
@@ -1123,7 +1124,7 @@ export default function App() {
 
               {/* Chat do WhatsApp Integrado (2/3) */}
               <div className="lg:col-span-2 bg-[#0D0D12] border border-[#1C1C24] rounded-2xl p-6 flex flex-col h-full overflow-hidden justify-between">
-                {selectedLead && (selectedLead.status === 'novo_lead' || selectedLead.status === 'em_atendimento') ? (
+                {selectedLead ? (
                   <div className="flex flex-col h-full justify-between">
                     <div className="flex justify-between items-center pb-3 border-b border-gray-900 mb-4 select-none">
                       <div className="flex items-center gap-3">
@@ -1560,10 +1561,10 @@ export default function App() {
                   </div>
 
                   {/* FLUXO ESPECÍFICO BPC/LOAS */}
-                  {(selectedLead.fluxo_ativo === 'BPC_IDOSO' || selectedLead.fluxo_ativo === 'BPC_DEFICIENTE') && (
+                  {(selectedLead.fluxo_ativo === 'BPC_IDOSO' || selectedLead.fluxo_ativo === 'BPC_DEFICIENTE' || selectedLead.bpc_pessoas_casa !== undefined || selectedLead.bpc_quem_renda !== undefined || selectedLead.bpc_casa_alugada_propria !== undefined) && (
                     <div className="space-y-4 pt-2">
                       <h3 className="text-xs font-bold text-violet-400 uppercase tracking-widest">
-                        Qualificação BPC/LOAS ({selectedLead.fluxo_ativo === 'BPC_IDOSO' ? 'Idoso' : 'Deficiente'})
+                        Qualificação BPC/LOAS {(selectedLead.fluxo_ativo === 'BPC_IDOSO' || (selectedLead.idade && selectedLead.idade >= 65)) ? 'Idoso' : 'Deficiente'}
                       </h3>
                       <div className="grid grid-cols-2 gap-4">
                         <DetailBlock 
@@ -1584,7 +1585,7 @@ export default function App() {
                   )}
 
                   {/* FLUXO ESPECÍFICO INSS CONTRIBUTIVO */}
-                  {selectedLead.fluxo_ativo === 'INSS_CONTRIBUTIVO' && (
+                  {(selectedLead.fluxo_ativo === 'INSS_CONTRIBUTIVO' || selectedLead.inss_foi_autonomo !== undefined || selectedLead.inss_como_contribuiu !== undefined || selectedLead.inss_laudos_medicos !== undefined) && (
                     <div className="space-y-4 pt-2">
                       <h3 className="text-xs font-bold text-emerald-400 uppercase tracking-widest">
                         Qualificação INSS Contributivo
@@ -1600,7 +1601,7 @@ export default function App() {
                   )}
 
                   {/* FLUXO ESPECÍFICO APOSENTADORIA */}
-                  {selectedLead.fluxo_ativo === 'APOSENTADORIA' && (
+                  {(selectedLead.fluxo_ativo === 'APOSENTADORIA' || selectedLead.retirement_work_history !== undefined || selectedLead.retirement_special_rural !== undefined || selectedLead.retirement_other_periods !== undefined) && (
                     <div className="space-y-4 pt-2">
                       <h3 className="text-xs font-bold text-amber-400 uppercase tracking-widest">
                         Qualificação de Aposentadoria

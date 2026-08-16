@@ -75,6 +75,49 @@ const STATE_QUESTIONS: Record<string, string[]> = {
   ]
 };
 
+export const DUVIDAS_FRASES: string[] = [
+  "Como as regras do INSS têm muitos detalhes específicos, a Dra. Mônica e nossa equipe vão analisar todo o seu histórico e fazer esse cálculo exato para você assim que terminarmos essas perguntas básicas da triagem. É bem rapidinho!",
+  "Essas regras previdenciárias variam muito de caso pra caso, então a Dra. Mônica vai olhar seu histórico completo e te dar essa resposta exata assim que a gente terminar essas perguntas iniciais. É rápido!",
+  "Cada situação previdenciária tem suas particularidades, por isso a Dra. Mônica vai analisar tudo com calma e te dar a resposta certa depois dessas perguntas básicas. Não demora!",
+  "As regras de aposentadoria têm muitos detalhes técnicos, então a Dra. Mônica vai fazer essa análise completa do seu caso assim que terminarmos aqui. É bem rápido!",
+  "Isso depende de vários fatores do seu histórico, e a Dra. Mônica vai calcular certinho pra você assim que a gente concluir essas perguntas iniciais. É rapidinho!",
+  "Como o cálculo previdenciário é bem específico, a Dra. Mônica vai analisar seu caso completo e te trazer essa resposta logo que terminarmos essa parte inicial.",
+  "Essa é uma dúvida importante, e justamente por isso a Dra. Mônica precisa ver seu histórico completo pra te dar a resposta certa. Assim que terminarmos aqui, ela cuida disso.",
+  "As regras de transição têm várias nuances, então a Dra. Mônica vai estudar seu caso com atenção assim que a gente fechar essas perguntas básicas. É rápido!",
+  "Isso o sistema do INSS calcula de um jeito bem específico caso a caso, e a Dra. Mônica vai fazer essa conta certinha pra você depois dessas perguntas. Não demora!",
+  "Essa análise exige olhar todo o seu histórico de contribuição, e é exatamente isso que a Dra. Mônica vai fazer assim que terminarmos aqui. É rapidinho!",
+  "Cada caso previdenciário tem suas próprias regras, então prefiro deixar essa resposta exata com a Dra. Mônica, que vai analisar tudo direitinho. Assim que terminarmos, ela cuida disso.",
+  "As regras de transição da reforma têm bastante detalhe, então a Dra. Mônica vai calcular isso certinho pra você em breve. É rápido!",
+  "Isso precisa de uma análise mais detalhada do seu histórico, que a Dra. Mônica vai fazer assim que terminarmos essas perguntas básicas da triagem. Não demora!",
+  "Prefiro não arriscar um número errado — a Dra. Mônica vai olhar seu caso com cuidado e te trazer a resposta certa depois dessas perguntas iniciais. É rapidinho!",
+  "Essa conta de regra de transição é bem técnica, então a Dra. Mônica vai fazer esse cálculo exato pra você assim que a gente concluir essa parte.",
+  "O ideal é a Dra. Mônica avaliar seu histórico completo pra essa resposta sair certinha — ela faz isso assim que terminarmos essas perguntas. É rápido!",
+  "Isso varia bastante de pessoa pra pessoa, então a Dra. Mônica vai analisar o seu caso específico e te dar essa resposta exata em breve.",
+  "As regras do INSS pra esse tipo de situação têm muitos detalhes, e a Dra. Mônica vai considerar tudo isso na análise do seu caso. Assim que terminarmos aqui, ela cuida disso.",
+  "Essa é uma pergunta que merece uma resposta bem calculada, e é a Dra. Mônica quem faz esse tipo de análise com precisão. Assim que a gente terminar aqui, ela vê isso.",
+  "O cálculo exato depende do seu histórico completo de contribuição, que a Dra. Mônica vai analisar assim que terminarmos essas perguntas básicas. É rapidinho!",
+  "Cada regra de transição tem um jeito diferente de calcular, então deixo isso com a Dra. Mônica, que vai te dar a resposta certa depois dessas perguntas.",
+  "Isso o sistema previdenciário calcula considerando vários fatores do seu caso, e a Dra. Mônica faz essa análise completa. Assim que terminarmos aqui, ela cuida disso.",
+  "Prefiro que a Dra. Mônica veja seu histórico completo antes de te dar essa resposta, pra garantir que sai certinha. Ela faz isso logo depois dessas perguntas.",
+  "Essa dúvida é importante e merece uma resposta precisa — por isso a Dra. Mônica vai analisar seu caso com atenção assim que terminarmos aqui. É rápido!",
+  "As regras de aposentadoria mudam bastante dependendo do seu histórico, então a Dra. Mônica vai calcular isso certinho pra você em breve.",
+  "Isso precisa de uma conta bem específica que só a Dra. Mônica consegue fazer com precisão, olhando seu histórico completo. Assim que terminarmos aqui, ela vê isso.",
+  "Cada situação de aposentadoria tem seu próprio cálculo, e a Dra. Mônica vai fazer isso certinho pra você assim que a gente concluir essas perguntas. Não demora!",
+  "Essa é uma análise que exige olhar todos os detalhes do seu caso, e é exatamente isso que a Dra. Mônica vai fazer depois dessas perguntas iniciais. É rapidinho!",
+  "O ideal aqui é a Dra. Mônica calcular com base no seu histórico completo, pra garantir que a resposta esteja certa. Ela faz isso assim que terminarmos.",
+  "Essas regras têm muita variação de caso pra caso, então prefiro deixar essa resposta exata com a Dra. Mônica. Assim que a gente terminar aqui, ela cuida disso.",
+  "Isso o INSS calcula de um jeito bem técnico, e é a Dra. Mônica quem tem essa expertise pra te dar a resposta certa. Ela vê isso assim que terminarmos.",
+  "Prefiro ser honesta: essa conta exige análise detalhada, que a Dra. Mônica vai fazer com seu histórico completo assim que a gente concluir essas perguntas.",
+  "Essa dúvida técnica é justamente o tipo de coisa que a Dra. Mônica resolve com precisão, analisando seu caso completo. Assim que terminarmos aqui, ela cuida disso.",
+  "As regras do INSS pra esse tipo de situação têm muitos detalhes, e a Dra. Mônica vai considerar tudo isso na análise do seu caso. É rápido!",
+  "Isso depende do seu histórico específico de contribuição, e a Dra. Mônica vai analisar tudo com cuidado assim que terminarmos essas perguntas.",
+  "Prefiro garantir que essa resposta saia certa, então deixo com a Dra. Mônica, que vai calcular com base no seu histórico completo. Ela faz isso logo depois dessas perguntas.",
+  "Essa é uma pergunta que exige cálculo técnico preciso, e é exatamente isso que a Dra. Mônica vai fazer assim que a gente terminar aqui. Não demora!",
+  "O sistema previdenciário considera muitos fatores nesse tipo de cálculo, e a Dra. Mônica vai analisar o seu caso específico. Assim que terminarmos, ela cuida disso.",
+  "Isso precisa de uma análise cuidadosa do seu histórico completo, que a Dra. Mônica vai fazer assim que a gente concluir essas perguntas básicas. É rapidinho!",
+  "Essa dúvida merece uma resposta bem calculada, e é justamente esse tipo de análise que a Dra. Mônica faz com precisão. Assim que terminarmos aqui, ela cuida disso."
+];
+
 const STATE_FALLBACK_FIELDS: Record<string, { field: string, value: any }> = {
   'AWAITING_NAME': { field: 'nome_usuario', value: 'amigo(a)' },
   'AWAITING_LAWYER': { field: 'has_lawyer', value: false },
@@ -362,7 +405,17 @@ export class SofiaEngine {
     }
 
     // 3. Yes/No mapping for FSM states
-    const estadosBinarios = ['AWAITING_DISABILITY', 'AWAITING_DISEASE', 'AWAITING_LAWYER', 'AWAITING_CURRENT_CONTRIBUTION'];
+    const estadosBinarios = [
+      'AWAITING_DISABILITY', 
+      'AWAITING_DISEASE', 
+      'AWAITING_LAWYER', 
+      'AWAITING_CURRENT_CONTRIBUTION',
+      'AWAITING_WORK',
+      'BPC_AWAITING_CADUNICO',
+      'INSS_AWAITING_REPORTS',
+      'RETIREMENT_AWAITING_SPECIAL_RURAL',
+      'RETIREMENT_AWAITING_OTHER_PERIODS'
+    ];
     if (currentState && estadosBinarios.includes(currentState)) {
       const isNegativeAnswer = /\b(nao|graca[s]? a deus nao|ainda bem que nao|felizmente nao)\b/i.test(cleanText) && cleanText.split(' ').length <= 6;
       if (isNegativeAnswer) {
@@ -376,6 +429,11 @@ export class SofiaEngine {
         }
         if (currentState === 'AWAITING_LAWYER') mergedData.has_lawyer = false;
         if (currentState === 'AWAITING_CURRENT_CONTRIBUTION') mergedData.esta_contribuindo_atualmente = false;
+        if (currentState === 'AWAITING_WORK') mergedData.trabalha_atualmente = false;
+        if (currentState === 'BPC_AWAITING_CADUNICO') mergedData.bpc_cad_unico = false;
+        if (currentState === 'INSS_AWAITING_REPORTS') mergedData.inss_laudos_medicos = false;
+        if (currentState === 'RETIREMENT_AWAITING_SPECIAL_RURAL') mergedData.retirement_special_rural = 'Não';
+        if (currentState === 'RETIREMENT_AWAITING_OTHER_PERIODS') mergedData.retirement_other_periods = 'Não';
         mergedData.is_off_topic = false; // sobrescreve, essa mensagem NÃO é off-topic
       }
     }
@@ -473,12 +531,14 @@ export class SofiaEngine {
       
       const isProibido = NOMES_PROIBIDOS.some(p => {
         const pNorm = p.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
-        return nomeNormalizado === pNorm || nomeNormalizado.includes(pNorm);
+        const regex = new RegExp('\\b' + pNorm + '\\b', 'i');
+        return regex.test(nomeNormalizado);
       });
 
       const isInvalido = NOMES_INVALIDOS.some(p => {
         const pNorm = p.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
-        return nomeNormalizado === pNorm || nomeNormalizado.includes(pNorm);
+        const regex = new RegExp('\\b' + pNorm + '\\b', 'i');
+        return regex.test(nomeNormalizado);
       });
 
       if (isProibido) {
@@ -856,7 +916,7 @@ JSON de retorno:`;
 
     // 2.5 Moradia/Companhia (BPC_AWAITING_HOUSEHOLD)
     if (currentState === 'BPC_AWAITING_HOUSEHOLD') {
-      if (clean && clean.length > 0) {
+      if (clean && clean.length > 0 && !this.isQuestionOrDoubt(text)) {
         data.bpc_pessoas_casa = text.trim();
       }
     }
@@ -924,7 +984,7 @@ JSON de retorno:`;
 
     // 5.5 Tempo de afastamento (AWAITING_LAST_CONTRIBUTION_TIME)
     if (currentState === 'AWAITING_LAST_CONTRIBUTION_TIME') {
-      if (clean && clean.length > 0) {
+      if (clean && clean.length > 0 && !this.isQuestionOrDoubt(text)) {
         data.tempo_parou_contribuir = text.trim();
       }
     }
@@ -934,6 +994,33 @@ JSON de retorno:`;
       const nomeDetectado = this.extrairNomePorCodigo(text);
       if (nomeDetectado) {
         data.nome_usuario = nomeDetectado;
+      }
+    }
+
+    // Histórico de trabalho de aposentadoria (RETIREMENT_AWAITING_WORK_HISTORY)
+    if (currentState === 'RETIREMENT_AWAITING_WORK_HISTORY') {
+      if (/\b(carteira|clt|registrad[oa]|assinado|carteira de trabalho|registro)\b/i.test(clean)) {
+        data.retirement_work_history = 'carteira';
+      } else if (/\b(autonomo|conta propria|mei|carne|avulso|por conta)\b/i.test(clean)) {
+        data.retirement_work_history = 'autônomo';
+      }
+    }
+
+    // Exposição rural/período especial (RETIREMENT_AWAITING_SPECIAL_RURAL)
+    if (currentState === 'RETIREMENT_AWAITING_SPECIAL_RURAL') {
+      if (/\b(nao|nunca|nao tenho|tenho nao|nenhum|tambem nao)\b/i.test(clean)) {
+        data.retirement_special_rural = 'Não';
+      } else if (/\b(sim|ja trabalhei|ja sim|trabalhei|roca|rural|insalubre|perigo|especial)\b/i.test(clean)) {
+        data.retirement_special_rural = 'Sim';
+      }
+    }
+
+    // Outros períodos (RETIREMENT_AWAITING_OTHER_PERIODS)
+    if (currentState === 'RETIREMENT_AWAITING_OTHER_PERIODS') {
+      if (/\b(nao|nunca|nao tenho|tenho nao|nenhum|tambem nao)\b/i.test(clean)) {
+        data.retirement_other_periods = 'Não';
+      } else if (/\b(sim|ja trabalhei|ja sim|trabalhei|servico militar|ensino tecnico|servico publico)\b/i.test(clean)) {
+        data.retirement_other_periods = 'Sim';
       }
     }
 
@@ -948,7 +1035,8 @@ JSON de retorno:`;
       'BPC_AWAITING_HOUSEHOLD_INCOME', 'BPC_AWAITING_HOME_STATUS', 
       'BPC_AWAITING_CADUNICO', 'BPC_AWAITING_HOUSEHOLD',
       'LAWYER_CHECK_ACTION', 'LAWYER_CHECK_CONTRACT', 'LAWYER_CHECK_PROCURACAO',
-      'AWAITING_DISABILITY'
+      'AWAITING_DISABILITY', 'RETIREMENT_AWAITING_WORK_HISTORY',
+      'RETIREMENT_AWAITING_SPECIAL_RURAL', 'RETIREMENT_AWAITING_OTHER_PERIODS'
     ];
     let needsFallback = true; // Por padrão, SEMPRE usa IA como rede de segurança
     if (currentState === 'AWAITING_NAME') {
@@ -965,6 +1053,9 @@ JSON de retorno:`;
     if (currentState === 'BPC_AWAITING_CADUNICO' && codeResult.bpc_cad_unico === undefined) needsFallback = true;
     if (currentState === 'BPC_AWAITING_HOUSEHOLD' && !codeResult.bpc_pessoas_casa) needsFallback = true;
     if (currentState === 'AWAITING_DISABILITY' && codeResult.tem_deficiencia === undefined) needsFallback = true;
+    if (currentState === 'RETIREMENT_AWAITING_WORK_HISTORY' && !codeResult.retirement_work_history) needsFallback = true;
+    if (currentState === 'RETIREMENT_AWAITING_SPECIAL_RURAL' && codeResult.retirement_special_rural === undefined) needsFallback = true;
+    if (currentState === 'RETIREMENT_AWAITING_OTHER_PERIODS' && codeResult.retirement_other_periods === undefined) needsFallback = true;
     // Só marca como resolvido por código (false) se o estado está na lista segura E o código de fato extraiu o dado
     if (estadosResolvidosPorCodigo.includes(currentState || '')) {
       if (currentState === 'AWAITING_NAME') {
@@ -981,6 +1072,9 @@ JSON de retorno:`;
       if (currentState === 'BPC_AWAITING_CADUNICO' && codeResult.bpc_cad_unico !== undefined) needsFallback = false;
       if (currentState === 'BPC_AWAITING_HOUSEHOLD' && codeResult.bpc_pessoas_casa) needsFallback = false;
       if (currentState === 'AWAITING_DISABILITY' && codeResult.tem_deficiencia !== undefined) needsFallback = false;
+      if (currentState === 'RETIREMENT_AWAITING_WORK_HISTORY' && codeResult.retirement_work_history) needsFallback = false;
+      if (currentState === 'RETIREMENT_AWAITING_SPECIAL_RURAL' && codeResult.retirement_special_rural !== undefined) needsFallback = false;
+      if (currentState === 'RETIREMENT_AWAITING_OTHER_PERIODS' && codeResult.retirement_other_periods !== undefined) needsFallback = false;
     }
 
     // Se a mensagem for longa (mais de 12 palavras) ou contiver múltiplos números, força fallback para IA para capturar dados voluntários extras
@@ -1116,6 +1210,13 @@ JSON de retorno:`;
     let { data: session } = await this.supabase.from('sofia_sessions').select('*').eq('phone', phone).single();
     dbTotalMs += (Date.now() - dbReadStart);
 
+    if (session) {
+      if (!session.user_data) {
+        session.user_data = {};
+      }
+      session.user_data.original_state_fsm = session.user_data.state_fsm || null;
+    }
+
     // 0.1 REMOVER ECO DE MENSAGENS (Pergunta anterior da Lara)
     if (session && session.user_data?.history) {
       const history = session.user_data.history;
@@ -1215,6 +1316,18 @@ JSON de retorno:`;
     if (!session) {
       sessionWasCreatedNow = true;
       console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] Criando sessão inicial para novo lead.`);
+      
+      const hasDoubt = this.isQuestionOrDoubt(text);
+      let phraseToPrepend = "";
+      if (hasDoubt) {
+        if (this.isAskingIfBot(text)) {
+          phraseToPrepend = "Sou uma assistente automatizada do escritório da Dra. Mônica, aqui pra te ajudar a organizar as informações do seu caso antes dela te atender pessoalmente.\n\n";
+        } else {
+          const randomIndex = Math.floor(Math.random() * DUVIDAS_FRASES.length);
+          phraseToPrepend = DUVIDAS_FRASES[randomIndex] + "\n\n";
+        }
+      }
+
       // Executa a extração híbrida logo na primeira mensagem para capturar nome ou dados de cara
       const tExtStart = Date.now();
       const initialExtracted = await this.runHybridExtraction(text, 'AWAITING_NAME');
@@ -1246,6 +1359,7 @@ JSON de retorno:`;
         }
         finalReply = `${saudacao}! Me chamo Lara, sou atendente do escritório da Dra. Mônica Lucioli. ${empatia} Me fala seu nome para eu registrar e te ajudar a entender o que pode ser feito.`;
       }
+      finalReply = phraseToPrepend + finalReply;
 
       const initialUserData: any = {
         history: [],
@@ -1274,7 +1388,7 @@ JSON de retorno:`;
           `${this.getBeneficiaryGenderTokens(initialExtracted.beneficiario_terceiro).art} ${initialExtracted.beneficiario_terceiro} já tem advogado cuidando do caso?` :
           "Você já tem advogado cuidando do caso?";
 
-        finalReply = `${greeting} ${prefixoConfirmacao}${question}`;
+        finalReply = phraseToPrepend + `${greeting} ${prefixoConfirmacao}${question}`;
         
         initialUserData.history = [
           { role: 'user', content: text },
@@ -1328,6 +1442,24 @@ JSON de retorno:`;
       const currentState = session.user_data?.state_fsm || undefined;
       const rawExtracted = await this.runHybridExtraction(text, currentState);
       extractedData = { ...extractedData, ...rawExtracted };
+
+      if (currentState && this.isQuestionOrDoubt(text)) {
+        const expectedField = this.getExpectedFieldForState(currentState);
+        const hasValidAnswer = expectedField && extractedData[expectedField] !== undefined && 
+                               extractedData[expectedField] !== null && 
+                               extractedData[expectedField] !== '';
+        
+        if (!hasValidAnswer) {
+          console.log(`[DETERMINISTIC GUARD] Pergunta/dúvida detectada no estado ${currentState} sem resposta válida. Forçando is_off_topic: true.`);
+          extractedData.is_off_topic = true;
+        }
+      }
+
+      if (extractedData.is_off_topic === true) {
+        console.log(`[OFF-TOPIC DETECTADO] Mensagem de ${phone} classificada como off-topic. Descartando outros campos extraídos neste turno.`);
+        const isOffTopicVal = extractedData.is_off_topic;
+        extractedData = { is_off_topic: isOffTopicVal };
+      }
 
       if (session.user_data?.beneficiario_terceiro && session.user_data?.idade !== undefined && session.user_data?.idade !== null) {
         delete extractedData.idade;
@@ -1473,7 +1605,8 @@ JSON de retorno:`;
       const isThanks = /\b(obrigad|valeu|agradec|tks|thanks|obg)\b/i.test(cleanText);
       if (isThanks) {
         const respostaAgradecimento = "De nada, daqui alguns minutos um profissional entrará em contato com você.";
-        const updates = { ...user_data, triagem_encerrada_msg_enviada: true };
+        const newHistory = [...(user_data.history || []), { role: 'user', content: text }, { role: 'assistant', content: respostaAgradecimento }];
+        const updates = { ...user_data, history: newHistory, triagem_encerrada_msg_enviada: true };
         await saveSession('finished', updates);
  
         let success = true;
@@ -1491,7 +1624,8 @@ JSON de retorno:`;
       }
       
       const respostaFinal = `Com base no que você me contou nossa equipe vai analisar melhor o seu caso. Assim que possível entraremos em contato novamente`;
-      const updates = { ...user_data, triagem_encerrada_msg_enviada: true };
+      const newHistory = [...(user_data.history || []), { role: 'user', content: text }, { role: 'assistant', content: respostaFinal }];
+      const updates = { ...user_data, history: newHistory, triagem_encerrada_msg_enviada: true };
       await saveSession('finished', updates);
  
       let success = true;
@@ -1561,7 +1695,12 @@ JSON de retorno:`;
     metrics?: { llmMs: number }
   ) {
     const { step, user_data, phone } = session;
+    const originalState = user_data?.original_state_fsm;
+    if (user_data) {
+      delete user_data.original_state_fsm;
+    }
     let history = user_data?.history || [];
+    const hasDoubt = this.isQuestionOrDoubt(text);
     const saveSession = saveSessionParam || (async (s: string | null, u: any) => {
       await this.supabase.rpc('save_session_data', {
         p_phone: phone,
@@ -1577,6 +1716,130 @@ JSON de retorno:`;
       user_data.fluxo_ativo = resolved.fluxo_ativo;
     }
     user_data.state_fsm = stateFsm;
+
+    let phraseToPrepend = "";
+    if (hasDoubt || (user_data?.is_off_topic === true)) {
+      if (this.isAskingIfBot(text)) {
+        phraseToPrepend = "Sou uma assistente automatizada do escritório da Dra. Mônica, aqui pra te ajudar a organizar as informações do seu caso antes dela te atender pessoalmente.";
+      } else {
+        if (!user_data.duvida_state_counts) {
+          user_data.duvida_state_counts = {};
+        }
+        const currentCount = (user_data.duvida_state_counts[stateFsm] || 0) + 1;
+        user_data.duvida_state_counts[stateFsm] = currentCount;
+        
+        if (currentCount >= 3) {
+          phraseToPrepend = "Entendo sua ansiedade! Pra te dar essa resposta com segurança, preciso só de mais algumas informações — vamos continuar?";
+        } else {
+          const randomIndex = Math.floor(Math.random() * DUVIDAS_FRASES.length);
+          phraseToPrepend = DUVIDAS_FRASES[randomIndex];
+        }
+      }
+    }
+
+    const isOffTopic = user_data?.is_off_topic === true;
+    if (isOffTopic) {
+      delete user_data.is_off_topic;
+      const standardRedirect = phraseToPrepend;
+      
+      let dryQuestion = "";
+      if (resolved.fluxo_ativo === 'EXCECAO') {
+        dryQuestion = EXCECAO_QUESTIONS[Math.floor(Math.random() * EXCECAO_QUESTIONS.length)];
+      } else {
+        let questionsList = STATE_QUESTIONS[stateFsm];
+        if (stateFsm === 'BPC_AWAITING_HOUSEHOLD_INCOME') {
+          const moraSozinho = user_data.bpc_pessoas_casa && (
+            String(user_data.bpc_pessoas_casa).toLowerCase().includes('sozinh') ||
+            String(user_data.bpc_pessoas_casa).toLowerCase().includes('moro só') ||
+            String(user_data.bpc_pessoas_casa).toLowerCase().includes('moro so') ||
+            String(user_data.bpc_pessoas_casa).toLowerCase().includes('moro solo') ||
+            String(user_data.bpc_pessoas_casa).toLowerCase().includes('vivo só') ||
+            String(user_data.bpc_pessoas_casa).toLowerCase().includes('vivo so') ||
+            String(user_data.bpc_pessoas_casa).toLowerCase().includes('apenas eu') ||
+            String(user_data.bpc_pessoas_casa).toLowerCase().includes('somente eu') ||
+            String(user_data.bpc_pessoas_casa).toLowerCase().includes('só eu') ||
+            String(user_data.bpc_pessoas_casa).toLowerCase().includes('so eu') ||
+            String(user_data.bpc_pessoas_casa).toLowerCase().includes('eu mesmo') ||
+            String(user_data.bpc_pessoas_casa).toLowerCase().includes('eu mesma') ||
+            String(user_data.bpc_pessoas_casa).toLowerCase().includes('eu sozinho') ||
+            String(user_data.bpc_pessoas_casa).toLowerCase().includes('eu sozinha') ||
+            String(user_data.bpc_pessoas_casa).toLowerCase().includes('ninguem mais') ||
+            String(user_data.bpc_pessoas_casa).toLowerCase().includes('ninguém mais') ||
+            String(user_data.bpc_pessoas_casa).toLowerCase().includes('moro sem ninguem') ||
+            String(user_data.bpc_pessoas_casa).toLowerCase().includes('não moro com ninguém') ||
+            String(user_data.bpc_pessoas_casa).toLowerCase().includes('nao moro com ninguem') ||
+            String(user_data.bpc_pessoas_casa).toLowerCase() === 'eu' ||
+            String(user_data.bpc_pessoas_casa).toLowerCase() === 'so' ||
+            String(user_data.bpc_pessoas_casa).toLowerCase() === 'só' ||
+            String(user_data.bpc_pessoas_casa).toLowerCase().includes('1 pessoa') ||
+            String(user_data.bpc_pessoas_casa).toLowerCase().includes('uma pessoa') ||
+            String(user_data.bpc_pessoas_casa).toLowerCase().includes('moro individual') ||
+            String(user_data.bpc_pessoas_casa).toLowerCase().includes('resido só') ||
+            String(user_data.bpc_pessoas_casa).toLowerCase().includes('resido so')
+          );
+          if (moraSozinho) {
+            questionsList = ["Você recebe algum dinheiro? Bolsa família, pensão, aposentadoria ou alguma outra renda?"];
+          }
+        }
+        dryQuestion = questionsList ? questionsList[Math.floor(Math.random() * questionsList.length)] : "";
+      }
+
+      const familiar = user_data.beneficiario_terceiro;
+      if (familiar) {
+        const { art, artLC, prep, pron, pronPoss } = this.getBeneficiaryGenderTokens(familiar);
+
+        if (stateFsm === 'AWAITING_LAWYER') {
+          dryQuestion = `${art} ${familiar} já tem advogado cuidando do caso?`;
+        } else if (stateFsm === 'LAWYER_CHECK_ACTION') {
+          dryQuestion = `Esse advogado já entrou com ação na Justiça em nome ${prep} ${artLC} ${familiar} ou só deu entrada no INSS?`;
+        } else if (stateFsm === 'LAWYER_CHECK_CONTRACT') {
+          dryQuestion = `${art} ${familiar} chegou a assinar contrato com esse advogado?`;
+        } else if (stateFsm === 'LAWYER_CHECK_PROCURACAO') {
+          dryQuestion = `${art} ${familiar} assinou procuração para esse advogado representar ${pron}?`;
+        } else if (stateFsm === 'AWAITING_AGE') {
+          dryQuestion = `Qual a idade ${prep} ${artLC} ${familiar}?`;
+        } else if (stateFsm === 'AWAITING_DISEASE') {
+          dryQuestion = `${art} ${familiar} tem alguma doença atualmente?`;
+        } else if (stateFsm === 'AWAITING_DISABILITY') {
+          dryQuestion = `${art} ${familiar} tem alguma deficiência?`;
+        } else if (stateFsm === 'AWAITING_TOTAL_CONTRIBUTION') {
+          dryQuestion = `${art} ${familiar} já trabalhou de carteira assinada ou contribuiu para o INSS?`;
+        } else if (stateFsm === 'AWAITING_CURRENT_CONTRIBUTION') {
+          dryQuestion = `Como está a rotina de trabalho ${prep} ${artLC} ${familiar} hoje em dia? ${pron.toUpperCase()} está conseguindo trabalhar?`;
+        } else if (stateFsm === 'AWAITING_LAST_CONTRIBUTION_TIME') {
+          dryQuestion = `Tem quanto tempo que ${art.toLowerCase()} ${familiar} se afastou ou parou de trabalhar?`;
+        } else if (stateFsm === 'INSS_AWAITING_EMPLOYMENT_TYPE') {
+          dryQuestion = `Como ${art.toLowerCase()} ${familiar} contribuía para o INSS? Era por carteira assinada, carnê ou MEI?`;
+        } else if (stateFsm === 'INSS_AWAITING_LAST_CONTRIBUTION') {
+          dryQuestion = `Tem quanto tempo que ${art.toLowerCase()} ${familiar} se afastou? Foi em que ano?`;
+        } else if (stateFsm === 'INSS_AWAITING_REPORTS') {
+          dryQuestion = `${art} ${familiar} possui exames, receitas ou laudos médicos recentes?`;
+        } else if (stateFsm === 'BPC_AWAITING_HOUSEHOLD') {
+          dryQuestion = `Quem mora com ${art.toLowerCase()} ${familiar} na casa ${pronPoss} hoje?`;
+        } else if (stateFsm === 'BPC_AWAITING_HOUSEHOLD_INCOME') {
+          dryQuestion = `Das pessoas que moram com ${art.toLowerCase()} ${familiar}, alguém trabalha ou recebe algum dinheiro?`;
+        } else if (stateFsm === 'BPC_AWAITING_HOME_STATUS') {
+          dryQuestion = `A casa ${prep} ${artLC} ${familiar} é própria, alugada ou cedida?`;
+        } else if (stateFsm === 'BPC_AWAITING_CADUNICO') {
+          dryQuestion = `${art} ${familiar} possui CadÚnico atualizado?`;
+        } else if (stateFsm === 'RETIREMENT_AWAITING_WORK_HISTORY') {
+          dryQuestion = `Seu histórico foi mais de carteira assinada ou autônomo?`;
+        } else if (stateFsm === 'RETIREMENT_AWAITING_SPECIAL_RURAL') {
+          dryQuestion = `Já trabalhou na roça ou exposto a barulho, calor forte ou produto químico?`;
+        } else if (stateFsm === 'RETIREMENT_AWAITING_OTHER_PERIODS') {
+          dryQuestion = `Já trabalhou em serviço público, exército ou escola técnica antes de 1998?`;
+        }
+      }
+
+      const reply = `${standardRedirect}\n\n${dryQuestion}`;
+      const newHistory = [...history, { role: 'user', content: text }, { role: 'assistant', content: reply }];
+      user_data.history = newHistory;
+      user_data.state_fsm = stateFsm;
+
+      await saveSession(this.mapFsmToStep(stateFsm), user_data);
+      console.log(`[DETERMINISTIC REDIRECT] Respondido desvio com frase padrão no estado ${stateFsm}. Bypassing LLM.`);
+      return reply;
+    }
 
     // BLOQUEIO DE PERGUNTAS DUPLICADAS CONSECUTIVAS:
     // Se a pergunta seca do estado atual for idêntica à última pergunta registrada como enviada,
@@ -1781,9 +2044,8 @@ JSON de retorno:`;
       return reply;
     }
 
-    // GUARDA DETERMINÍSTICO 1: Força o Passo 2 sem chamar a IA apenas se o texto de fato se parecer com um nome próprio real
     const nomeDetectado = this.extrairNomePorCodigo(text);
-    if (stateFsm === 'AWAITING_NAME' && nomeDetectado) {
+    if (stateFsm === 'AWAITING_NAME' && nomeDetectado && !this.isQuestionOrDoubt(text)) {
         console.log(`🔒 SOFT-GUARD NOME: Nome próprio simples "${nomeDetectado}" detectado. Salvando e prosseguindo para IA.`);
         const nome = nomeDetectado;
         const newHistory = [...history, { role: 'user', content: text }];
@@ -1833,11 +2095,11 @@ JSON de retorno:`;
     }
 
     // GUARDA DETERMINÍSTICO 4: OFF-TOPIC — resposta humana e calorosa sem chamar a IA
-    const isOffTopic = user_data?.is_off_topic === true;
+    const isOffTopicLocal = user_data?.is_off_topic === true;
     const lastUserMsg = history.length > 0 ? history[history.length - 1] : null;
     const msgJaNoHistorico = lastUserMsg?.role === 'user' && lastUserMsg?.content === text;
 
-    if (isOffTopic && !msgJaNoHistorico) {
+    if (isOffTopicLocal && !msgJaNoHistorico) {
       console.log(`🔒 SOFT-GUARD OFF-TOPIC: Detectada mensagem fora do assunto ou reclamação. Salvando histórico e acionando IA com flag de contexto.`);
       const newHistory = [...history, { role: 'user', content: text }];
       
@@ -2170,7 +2432,7 @@ JSON de retorno:`;
       return reply;
     }
 
-    const promptSofia = `Você é Lara, atendente humana do escritório de advocacia previdenciária da Dra. Mônica Lucioli.
+    let promptSofia = `Você é Lara, atendente humana do escritório de advocacia previdenciária da Dra. Mônica Lucioli.
 Empatia/Acolhimento de dor ou doença já demonstrado nesta conversa: ${user_data.ultimo_sofrimento_com_empatia ? "SIM (É TERMINANTEMENTE PROIBIDO repetir ou iniciar sua resposta com frases de empatia como 'sinto muito', 'que situação difícil', 'poxa', etc. Vá direto à pergunta!)" : "NÃO"}
 Você realiza a triagem de clientes via WhatsApp. Seu tom de voz deve ser 100% IDÊNTICO ao estilo real do escritório: extremamente direto, seco, prático, objetivo e muito curto nas perguntas de cadastro, mas demonstrando sentimentos humanos reais e calorosos quando o cliente relata dor, doença grave ou luto (especialmente viúvas/viúvos).
 
@@ -2218,6 +2480,10 @@ ${JSON.stringify(history.map((h: any) => ({ role: h.role, content: h.content }))
 "${text}"
 
 Gere a resposta da Lara (retorne APENAS o texto reescrito da pergunta base, sem mais nada):`;
+
+    if (hasDoubt) {
+      promptSofia += `\n\n[AVISO CRÍTICO] O cliente enviou uma dúvida ou pergunta técnica previdenciária que já foi respondida pelo sistema com uma frase padrão determinística. É TERMINANTEMENTE PROIBIDO que você tente responder à dúvida dele, comente sobre ela, faça qualquer desvio ou expresse qualquer empatia/acolhimento adicionais. Você deve ignorar a dúvida completamente e apenas reescrever a pergunta base de forma muito direta, curta e objetiva.`;
+    }
 
     console.log(`🧠 Chamando inteligência artificial (Lara Conversacional) para gerar resposta...`);
     const llmStart = Date.now();
@@ -2463,7 +2729,8 @@ Gere a resposta da Lara (retorne APENAS o texto reescrito da pergunta base, sem 
     const finalFluxo = nextStateResolved.fluxo_ativo;
 
     // --- CONTADOR DE REPETIÇÃO DE PERGUNTA ---
-    if (stateFsm === finalState && finalState !== 'FINISHED' && finalState !== 'AWAITING_NAME') {
+    const checkState = originalState || stateFsm;
+    if (checkState === finalState && finalState !== 'FINISHED' && finalState !== 'AWAITING_NAME') {
       const fieldCountKey = `tentativas_${finalState}`;
       user_data[fieldCountKey] = (user_data[fieldCountKey] || 0) + 1;
       console.log(`ℹ️ [REPETIÇÃO] Pergunta do estado ${finalState} repetida pela ${user_data[fieldCountKey]}ª vez.`);
@@ -2494,6 +2761,10 @@ Gere a resposta da Lara (retorne APENAS o texto reescrito da pergunta base, sem 
 
     const timestamp = new Date().toISOString();
     console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] 5. Estado calculado pela FSM: state="${finalState}", fluxo="${finalFluxo || 'N/A'}"`);
+
+    if (hasDoubt && phraseToPrepend) {
+      finalReply = `${phraseToPrepend}\n\n${finalReply}`;
+    }
 
     const newHistory = [
       ...history,
@@ -2575,6 +2846,60 @@ Gere a resposta da Lara (retorne APENAS o texto reescrito da pergunta base, sem 
     }]);
     
     return apresentacao;
+  }
+
+  isAskingIfBot(text: string): boolean {
+    const clean = text.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+    const botPatterns = [
+      /voce\s+e\s+(um\s+)?robo/i,
+      /e\s+um\s+bot/i,
+      /\be\s+ia\b/i,
+      /e\s+humano\s+de\s+verdade/i,
+      /tem\s+alguem\s+ai/i
+    ];
+    return botPatterns.some(pattern => pattern.test(clean));
+  }
+
+  isQuestionOrDoubt(text: string): boolean {
+    if (this.isAskingIfBot(text)) return true;
+    const clean = text.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+    if (text.includes('?')) return true;
+    
+    const questionPatterns = [
+      /\b(consigo|posso|como|quanto|custa|valor|qual|onde|quais|direito|aposenta|aposentar|receber|recebo|funciona|ajuda|informacao|tirar\s+duvida|significa|indeferimento|negado|recusado|pago|pagar|custo|gratis)\b/i,
+      /\b(como\s+faco|como\s+funciona|tenho\s+direito|vou\s+conseguir|vou\s+aposentar|custa\s+alguma\s+coisa|qual\s+o\s+valor|quanto\s+custa)\b/i,
+      /\b(onde\s+fica|onde\s+e|onde\s+voces\s+ficam|qual\s+o\s+endereco|endereco)\b/i
+    ];
+    
+    return questionPatterns.some(pattern => pattern.test(clean));
+  }
+
+  getExpectedFieldForState(state?: string): string | null {
+    if (!state) return null;
+    const mapping: Record<string, string> = {
+      'AWAITING_NAME': 'nome_usuario',
+      'AWAITING_LAWYER': 'has_lawyer',
+      'LAWYER_CHECK_ACTION': 'lawyer_has_action',
+      'LAWYER_CHECK_CONTRACT': 'lawyer_has_contract',
+      'LAWYER_CHECK_PROCURACAO': 'lawyer_has_procuracao',
+      'AWAITING_AGE': 'idade',
+      'AWAITING_TOTAL_CONTRIBUTION': 'inss_tempo_carteira',
+      'AWAITING_CURRENT_CONTRIBUTION': 'esta_contribuindo_atualmente',
+      'AWAITING_LAST_CONTRIBUTION_TIME': 'tempo_parou_contribuir',
+      'AWAITING_DISEASE': 'tem_doenca_ou_limitacao',
+      'AWAITING_DISABILITY': 'tem_deficiencia',
+      'BPC_AWAITING_HOUSEHOLD': 'bpc_pessoas_casa',
+      'BPC_AWAITING_HOUSEHOLD_INCOME': 'bpc_renda_familiar',
+      'BPC_AWAITING_HOME_STATUS': 'bpc_casa_alugada_propria',
+      'BPC_AWAITING_CADUNICO': 'bpc_cad_unico',
+      'INSS_AWAITING_EMPLOYMENT_TYPE': 'inss_como_contribuiu',
+      'INSS_AWAITING_LAST_CONTRIBUTION': 'inss_ultima_contribuicao',
+      'INSS_AWAITING_REPORTS': 'inss_laudos_medicos',
+      'RETIREMENT_AWAITING_WORK_HISTORY': 'retirement_work_history',
+      'RETIREMENT_AWAITING_SPECIAL_RURAL': 'retirement_special_rural',
+      'RETIREMENT_AWAITING_OTHER_PERIODS': 'retirement_other_periods'
+    };
+    return mapping[state] || null;
   }
 
   /**
@@ -2903,6 +3228,13 @@ Gere a resposta da Lara (retorne APENAS o texto reescrito da pergunta base, sem 
 
     // 3. Roteiro Aposentadoria
     if (fluxo_ativo === 'APOSENTADORIA') {
+      const isFemale = this.isFemaleLead(userData.nome_usuario);
+      const meetsAgeRetirement = (ageNum >= 65 && contribYears >= 15) || (isFemale && ageNum >= 62 && contribYears >= 15);
+      if (meetsAgeRetirement) {
+        console.log(`[FSM Skip] Lead atingiu requisitos mínimos de aposentadoria por idade (idade: ${ageNum}, contrib: ${contribYears}, feminino: ${isFemale}). Pulando exposição rural/especial.`);
+        return { state: 'FINISHED', fluxo_ativo };
+      }
+
       if (userData.retirement_work_history === undefined || userData.retirement_work_history === null || String(userData.retirement_work_history).trim() === '') {
         return { state: 'RETIREMENT_AWAITING_WORK_HISTORY', fluxo_ativo };
       }
@@ -2916,6 +3248,22 @@ Gere a resposta da Lara (retorne APENAS o texto reescrito da pergunta base, sem 
     }
 
     return { state: 'FINISHED', fluxo_ativo };
+  }
+
+  isFemaleLead(name?: string): boolean {
+    if (!name) return false;
+    const clean = name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+    if (clean.startsWith("dona ") || clean.startsWith("sra ") || clean.startsWith("senhora ")) {
+      return true;
+    }
+    const words = clean.split(/\s+/);
+    const firstName = words[0];
+    if (firstName.endsWith('a')) {
+      const maleExceptions = ['luca', 'andre', 'andrea', 'joshua', 'noah', 'jean', 'bautista'];
+      if (maleExceptions.includes(firstName)) return false;
+      return true;
+    }
+    return false;
   }
 
   private parseNumber(v: any): number {
