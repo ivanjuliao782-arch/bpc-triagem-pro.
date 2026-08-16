@@ -405,7 +405,17 @@ export class SofiaEngine {
     }
 
     // 3. Yes/No mapping for FSM states
-    const estadosBinarios = ['AWAITING_DISABILITY', 'AWAITING_DISEASE', 'AWAITING_LAWYER', 'AWAITING_CURRENT_CONTRIBUTION'];
+    const estadosBinarios = [
+      'AWAITING_DISABILITY', 
+      'AWAITING_DISEASE', 
+      'AWAITING_LAWYER', 
+      'AWAITING_CURRENT_CONTRIBUTION',
+      'AWAITING_WORK',
+      'BPC_AWAITING_CADUNICO',
+      'INSS_AWAITING_REPORTS',
+      'RETIREMENT_AWAITING_SPECIAL_RURAL',
+      'RETIREMENT_AWAITING_OTHER_PERIODS'
+    ];
     if (currentState && estadosBinarios.includes(currentState)) {
       const isNegativeAnswer = /\b(nao|graca[s]? a deus nao|ainda bem que nao|felizmente nao)\b/i.test(cleanText) && cleanText.split(' ').length <= 6;
       if (isNegativeAnswer) {
@@ -419,6 +429,11 @@ export class SofiaEngine {
         }
         if (currentState === 'AWAITING_LAWYER') mergedData.has_lawyer = false;
         if (currentState === 'AWAITING_CURRENT_CONTRIBUTION') mergedData.esta_contribuindo_atualmente = false;
+        if (currentState === 'AWAITING_WORK') mergedData.trabalha_atualmente = false;
+        if (currentState === 'BPC_AWAITING_CADUNICO') mergedData.bpc_cad_unico = false;
+        if (currentState === 'INSS_AWAITING_REPORTS') mergedData.inss_laudos_medicos = false;
+        if (currentState === 'RETIREMENT_AWAITING_SPECIAL_RURAL') mergedData.retirement_special_rural = 'Não';
+        if (currentState === 'RETIREMENT_AWAITING_OTHER_PERIODS') mergedData.retirement_other_periods = 'Não';
         mergedData.is_off_topic = false; // sobrescreve, essa mensagem NÃO é off-topic
       }
     }
@@ -516,12 +531,14 @@ export class SofiaEngine {
       
       const isProibido = NOMES_PROIBIDOS.some(p => {
         const pNorm = p.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
-        return nomeNormalizado === pNorm || nomeNormalizado.includes(pNorm);
+        const regex = new RegExp('\\b' + pNorm + '\\b', 'i');
+        return regex.test(nomeNormalizado);
       });
 
       const isInvalido = NOMES_INVALIDOS.some(p => {
         const pNorm = p.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
-        return nomeNormalizado === pNorm || nomeNormalizado.includes(pNorm);
+        const regex = new RegExp('\\b' + pNorm + '\\b', 'i');
+        return regex.test(nomeNormalizado);
       });
 
       if (isProibido) {
@@ -989,6 +1006,24 @@ JSON de retorno:`;
       }
     }
 
+    // Exposição rural/período especial (RETIREMENT_AWAITING_SPECIAL_RURAL)
+    if (currentState === 'RETIREMENT_AWAITING_SPECIAL_RURAL') {
+      if (/\b(nao|nunca|nao tenho|tenho nao|nenhum|tambem nao)\b/i.test(clean)) {
+        data.retirement_special_rural = 'Não';
+      } else if (/\b(sim|ja trabalhei|ja sim|trabalhei|roca|rural|insalubre|perigo|especial)\b/i.test(clean)) {
+        data.retirement_special_rural = 'Sim';
+      }
+    }
+
+    // Outros períodos (RETIREMENT_AWAITING_OTHER_PERIODS)
+    if (currentState === 'RETIREMENT_AWAITING_OTHER_PERIODS') {
+      if (/\b(nao|nunca|nao tenho|tenho nao|nenhum|tambem nao)\b/i.test(clean)) {
+        data.retirement_other_periods = 'Não';
+      } else if (/\b(sim|ja trabalhei|ja sim|trabalhei|servico militar|ensino tecnico|servico publico)\b/i.test(clean)) {
+        data.retirement_other_periods = 'Sim';
+      }
+    }
+
     return data;
   }
 
@@ -1000,7 +1035,8 @@ JSON de retorno:`;
       'BPC_AWAITING_HOUSEHOLD_INCOME', 'BPC_AWAITING_HOME_STATUS', 
       'BPC_AWAITING_CADUNICO', 'BPC_AWAITING_HOUSEHOLD',
       'LAWYER_CHECK_ACTION', 'LAWYER_CHECK_CONTRACT', 'LAWYER_CHECK_PROCURACAO',
-      'AWAITING_DISABILITY', 'RETIREMENT_AWAITING_WORK_HISTORY'
+      'AWAITING_DISABILITY', 'RETIREMENT_AWAITING_WORK_HISTORY',
+      'RETIREMENT_AWAITING_SPECIAL_RURAL', 'RETIREMENT_AWAITING_OTHER_PERIODS'
     ];
     let needsFallback = true; // Por padrão, SEMPRE usa IA como rede de segurança
     if (currentState === 'AWAITING_NAME') {
@@ -1018,6 +1054,8 @@ JSON de retorno:`;
     if (currentState === 'BPC_AWAITING_HOUSEHOLD' && !codeResult.bpc_pessoas_casa) needsFallback = true;
     if (currentState === 'AWAITING_DISABILITY' && codeResult.tem_deficiencia === undefined) needsFallback = true;
     if (currentState === 'RETIREMENT_AWAITING_WORK_HISTORY' && !codeResult.retirement_work_history) needsFallback = true;
+    if (currentState === 'RETIREMENT_AWAITING_SPECIAL_RURAL' && codeResult.retirement_special_rural === undefined) needsFallback = true;
+    if (currentState === 'RETIREMENT_AWAITING_OTHER_PERIODS' && codeResult.retirement_other_periods === undefined) needsFallback = true;
     // Só marca como resolvido por código (false) se o estado está na lista segura E o código de fato extraiu o dado
     if (estadosResolvidosPorCodigo.includes(currentState || '')) {
       if (currentState === 'AWAITING_NAME') {
@@ -1035,6 +1073,8 @@ JSON de retorno:`;
       if (currentState === 'BPC_AWAITING_HOUSEHOLD' && codeResult.bpc_pessoas_casa) needsFallback = false;
       if (currentState === 'AWAITING_DISABILITY' && codeResult.tem_deficiencia !== undefined) needsFallback = false;
       if (currentState === 'RETIREMENT_AWAITING_WORK_HISTORY' && codeResult.retirement_work_history) needsFallback = false;
+      if (currentState === 'RETIREMENT_AWAITING_SPECIAL_RURAL' && codeResult.retirement_special_rural !== undefined) needsFallback = false;
+      if (currentState === 'RETIREMENT_AWAITING_OTHER_PERIODS' && codeResult.retirement_other_periods !== undefined) needsFallback = false;
     }
 
     // Se a mensagem for longa (mais de 12 palavras) ou contiver múltiplos números, força fallback para IA para capturar dados voluntários extras
@@ -1276,6 +1316,18 @@ JSON de retorno:`;
     if (!session) {
       sessionWasCreatedNow = true;
       console.log(`[INSTRUMENTAÇÃO] [${timestamp}] [Lead: ${phone}] Criando sessão inicial para novo lead.`);
+      
+      const hasDoubt = this.isQuestionOrDoubt(text);
+      let phraseToPrepend = "";
+      if (hasDoubt) {
+        if (this.isAskingIfBot(text)) {
+          phraseToPrepend = "Sou uma assistente automatizada do escritório da Dra. Mônica, aqui pra te ajudar a organizar as informações do seu caso antes dela te atender pessoalmente.\n\n";
+        } else {
+          const randomIndex = Math.floor(Math.random() * DUVIDAS_FRASES.length);
+          phraseToPrepend = DUVIDAS_FRASES[randomIndex] + "\n\n";
+        }
+      }
+
       // Executa a extração híbrida logo na primeira mensagem para capturar nome ou dados de cara
       const tExtStart = Date.now();
       const initialExtracted = await this.runHybridExtraction(text, 'AWAITING_NAME');
@@ -1307,6 +1359,7 @@ JSON de retorno:`;
         }
         finalReply = `${saudacao}! Me chamo Lara, sou atendente do escritório da Dra. Mônica Lucioli. ${empatia} Me fala seu nome para eu registrar e te ajudar a entender o que pode ser feito.`;
       }
+      finalReply = phraseToPrepend + finalReply;
 
       const initialUserData: any = {
         history: [],
@@ -1335,7 +1388,7 @@ JSON de retorno:`;
           `${this.getBeneficiaryGenderTokens(initialExtracted.beneficiario_terceiro).art} ${initialExtracted.beneficiario_terceiro} já tem advogado cuidando do caso?` :
           "Você já tem advogado cuidando do caso?";
 
-        finalReply = `${greeting} ${prefixoConfirmacao}${question}`;
+        finalReply = phraseToPrepend + `${greeting} ${prefixoConfirmacao}${question}`;
         
         initialUserData.history = [
           { role: 'user', content: text },
@@ -1552,7 +1605,8 @@ JSON de retorno:`;
       const isThanks = /\b(obrigad|valeu|agradec|tks|thanks|obg)\b/i.test(cleanText);
       if (isThanks) {
         const respostaAgradecimento = "De nada, daqui alguns minutos um profissional entrará em contato com você.";
-        const updates = { ...user_data, triagem_encerrada_msg_enviada: true };
+        const newHistory = [...(user_data.history || []), { role: 'user', content: text }, { role: 'assistant', content: respostaAgradecimento }];
+        const updates = { ...user_data, history: newHistory, triagem_encerrada_msg_enviada: true };
         await saveSession('finished', updates);
  
         let success = true;
@@ -1570,7 +1624,8 @@ JSON de retorno:`;
       }
       
       const respostaFinal = `Com base no que você me contou nossa equipe vai analisar melhor o seu caso. Assim que possível entraremos em contato novamente`;
-      const updates = { ...user_data, triagem_encerrada_msg_enviada: true };
+      const newHistory = [...(user_data.history || []), { role: 'user', content: text }, { role: 'assistant', content: respostaFinal }];
+      const updates = { ...user_data, history: newHistory, triagem_encerrada_msg_enviada: true };
       await saveSession('finished', updates);
  
       let success = true;
@@ -3173,6 +3228,13 @@ Gere a resposta da Lara (retorne APENAS o texto reescrito da pergunta base, sem 
 
     // 3. Roteiro Aposentadoria
     if (fluxo_ativo === 'APOSENTADORIA') {
+      const isFemale = this.isFemaleLead(userData.nome_usuario);
+      const meetsAgeRetirement = (ageNum >= 65 && contribYears >= 15) || (isFemale && ageNum >= 62 && contribYears >= 15);
+      if (meetsAgeRetirement) {
+        console.log(`[FSM Skip] Lead atingiu requisitos mínimos de aposentadoria por idade (idade: ${ageNum}, contrib: ${contribYears}, feminino: ${isFemale}). Pulando exposição rural/especial.`);
+        return { state: 'FINISHED', fluxo_ativo };
+      }
+
       if (userData.retirement_work_history === undefined || userData.retirement_work_history === null || String(userData.retirement_work_history).trim() === '') {
         return { state: 'RETIREMENT_AWAITING_WORK_HISTORY', fluxo_ativo };
       }
@@ -3186,6 +3248,22 @@ Gere a resposta da Lara (retorne APENAS o texto reescrito da pergunta base, sem 
     }
 
     return { state: 'FINISHED', fluxo_ativo };
+  }
+
+  isFemaleLead(name?: string): boolean {
+    if (!name) return false;
+    const clean = name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+    if (clean.startsWith("dona ") || clean.startsWith("sra ") || clean.startsWith("senhora ")) {
+      return true;
+    }
+    const words = clean.split(/\s+/);
+    const firstName = words[0];
+    if (firstName.endsWith('a')) {
+      const maleExceptions = ['luca', 'andre', 'andrea', 'joshua', 'noah', 'jean', 'bautista'];
+      if (maleExceptions.includes(firstName)) return false;
+      return true;
+    }
+    return false;
   }
 
   private parseNumber(v: any): number {

@@ -28,6 +28,7 @@ export interface ScoreUserData {
   inss_laudos_medicos?: boolean;
   esta_contribuindo_atualmente?: boolean;
   status_final?: string;
+  nome_usuario?: string;
 }
 
 /**
@@ -55,6 +56,20 @@ export function calcularScorePrevidenciario(userData: ScoreUserData): number {
     return match ? parseInt(match[0], 10) : 0;
   };
 
+  const isFemaleName = (name?: string): boolean => {
+    if (!name) return false;
+    const clean = name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+    if (clean.startsWith("dona ") || clean.startsWith("sra ") || clean.startsWith("senhora ")) {
+      return true;
+    }
+    const firstName = clean.split(/\s+/)[0];
+    if (firstName.endsWith('a')) {
+      const maleExceptions = ['luca', 'andre', 'andrea', 'joshua', 'noah', 'jean', 'bautista'];
+      return !maleExceptions.includes(firstName);
+    }
+    return false;
+  };
+
   const ageNum = parseAge(userData.idade);
   const contribYears = parseContrib(userData.tempo_contribuicao || userData.inss_tempo_carteira);
 
@@ -71,8 +86,13 @@ export function calcularScorePrevidenciario(userData: ScoreUserData): number {
     String(h.content || "").toLowerCase().includes("aposentadoria")
   );
 
+  const qualifiesAgeRetirement = 
+    (ageNum >= 65 && contribYears >= 15) || 
+    (isFemaleName(userData.nome_usuario) && ageNum >= 62 && contribYears >= 15);
+
   const isAposentadoria = 
     userData.fluxo_ativo === 'APOSENTADORIA' ||
+    qualifiesAgeRetirement ||
     (
       userData.fluxo_ativo !== 'BPC_IDOSO' &&
       userData.fluxo_ativo !== 'BPC_DEFICIENTE' &&
@@ -85,6 +105,10 @@ export function calcularScorePrevidenciario(userData: ScoreUserData): number {
 
   if (isAposentadoria) {
     // === FUNIL 1: APOSENTADORIA / INSS REGULAR ===
+    // Bônus para quem já atinge os requisitos mínimos de aposentadoria por idade
+    if (qualifiesAgeRetirement) {
+      scoreValue += 25;
+    }
     // 1. Contribuição
     if (contribYears >= 28) {
       scoreValue += 40;
