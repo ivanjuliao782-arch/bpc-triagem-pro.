@@ -1775,36 +1775,6 @@ export default function App() {
                   </select>
                 </div>
 
-                {/* Alterar Funil */}
-                <div className="flex items-center gap-2">
-                  <span className="text-[10px] font-bold text-gray-500 uppercase">Funil Ativo:</span>
-                  <select 
-                    value={selectedLead.fluxo_ativo || ''} 
-                    onChange={e => {
-                      const newFluxo = e.target.value || undefined;
-                      let newTipoBeneficio = undefined;
-                      if (newFluxo === 'BPC_IDOSO') newTipoBeneficio = 'BPC IDOSO';
-                      else if (newFluxo === 'BPC_DEFICIENTE') newTipoBeneficio = 'BPC Deficiente';
-                      else if (newFluxo === 'INSS_CONTRIBUTIVO') newTipoBeneficio = 'INSS CONTRIBUTIVO';
-                      else if (newFluxo === 'APOSENTADORIA') newTipoBeneficio = 'APOSENTADORIA';
-                      else if (newFluxo === 'EXCECAO') newTipoBeneficio = 'EXCECAO';
-
-                      updateLeadStatus(selectedLead.id, selectedLead.status, {
-                        fluxo_ativo: newFluxo as any,
-                        tipoBeneficio: newTipoBeneficio
-                      });
-                    }}
-                    className="bg-[#12121A] border border-gray-800 text-xs font-semibold rounded-xl px-3 py-2 outline-none cursor-pointer focus:border-violet-500/30 text-white"
-                  >
-                    <option value="">Não definido</option>
-                    <option value="BPC_IDOSO">BPC IDOSO</option>
-                    <option value="BPC_DEFICIENTE">BPC DEFICIENTE</option>
-                    <option value="INSS_CONTRIBUTIVO">INSS CONTRIBUTIVO</option>
-                    <option value="APOSENTADORIA">APOSENTADORIA</option>
-                    <option value="EXCECAO">EXCECAO</option>
-                  </select>
-                </div>
-
                 {/* Ações Rápidas */}
                 <div className="flex gap-2">
                   <button 
